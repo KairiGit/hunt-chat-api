@@ -1,0 +1,64 @@
+{
+  "name": "HUNT Chat-API Development Environment",
+  "image": "mcr.microsoft.com/devcontainers/go:1.24-bullseye",
+
+  // Features to add to the dev container
+  "features": {
+    "ghcr.io/devcontainers/features/azure-cli:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "go.toolsManagement.checkForUpdates": "local",
+        "go.useLanguageServer": true,
+        "go.gopath": "/go",
+        "go.goroot": "/usr/local/go",
+        "go.formatTool": "goimports",
+        "go.lintTool": "golangci-lint",
+        "go.testFlags": ["-v"]
+      },
+      "extensions": [
+        "golang.Go",
+        "ms-azuretools.vscode-azurefunctions",
+        "ms-azuretools.vscode-azureappservice",
+        "ms-vscode.azure-account",
+        "ms-azuretools.vscode-docker",
+        "GitHub.copilot",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+
+  "forwardPorts": [8080, 8081, 3000],
+
+  // Use 'postCreateCommand' to run commands after the container is created
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  // Configure tool-specific properties
+  "mounts": [
+    "source=${localWorkspaceFolder}/.git,target=/workspaces/HUNT/.git,type=bind,consistency=cached"
+  ],
+
+  "remoteEnv": {
+    "GO111MODULE": "on",
+    "GOPROXY": "https://proxy.golang.org,direct",
+    "GOSUMDB": "sum.golang.org",
+    "PORT": "8080",
+    "ENVIRONMENT": "development"
+  },
+
+  "remoteUser": "vscode",
+
+  // Configure the container's lifecycle
+  "shutdownAction": "stopContainer"
+}

@@ -1,0 +1,116 @@
+package main
+
+import (
+	"log"
+	"net/http"
+
+	config "hunt-chat-api/configs"
+	"hunt-chat-api/internal/handlers"
+	"hunt-chat-api/internal/services"
+
+	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
+)
+
+func main() {
+	// .envファイルを読み込み
+	if err := godotenv.Load(); err != nil {
+		log.Printf("Warning: .env file not found or could not be loaded: %v", err)
+	}
+
+	// 設定の読み込み
+	cfg := config.LoadConfig()
+	// ログにAPIキーとエンドポイントを出力（デバッグ用）
+	log.Printf("DEBUG: Loaded AZURE_OPENAI_API_KEY (first 10 chars): %s...", cfg.AzureOpenAIAPIKey[:min(10, len(cfg.AzureOpenAIAPIKey))])
+    log.Printf("DEBUG: Loaded AZURE_OPENAI_ENDPOINT: %s", cfg.AzureOpenAIEndpoint)
+
+	// Ginルーターの初期化
+	r := gin.Default()
+
+	// サービスの初期化
+	azureOpenAIService := services.NewAzureOpenAIService(
+		cfg.AzureOpenAIEndpoint,
+		cfg.AzureOpenAIAPIKey,
+		cfg.AzureOpenAIAPIVersion,
+		cfg.AzureOpenAIDeploymentName,
+	)
+
+	// ハンドラーの初期化
+	weatherHandler := handlers.NewWeatherHandler()
+	demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
+	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService())
+
+	// ヘルスチェックエンドポイント
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "healthy",
+			"service": "HUNT Chat-API",
+		})
+	})
+
+	// APIバージョン1のルートグループ
+	v1 := r.Group("/api/v1")
+	{
+		v1.GET("/hello", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Hello from HUNT Chat-API!",
+			})
+		})
+
+		// 気象データAPI
+		weather := v1.Group("/weather")
+		{
+			weather.GET("/test", weatherHandler.TestWeatherAPI)
+			weather.GET("/regions", weatherHandler.GetRegionCodes)
+			weather.GET("/forecast/:regionCode", weatherHandler.GetForecastData)
+			weather.GET("/forecast", weatherHandler.GetForecastData) // デフォルト：東京
+			weather.GET("/tokyo", weatherHandler.GetTokyoWeatherData)
+			weather.GET("/region/:regionCode", weatherHandler.GetWeatherByRegion)
+			
+			// 過去データAPI
+			weather.GET("/historical/:regionCode", weatherHandler.GetHistoricalWeatherData)
+			weather.GET("/historical", weatherHandler.GetHistoricalWeatherData) // デフォルト：東京
+			weather.GET("/historical/:regionCode/date", weatherHandler.GetHistoricalWeatherDataByDate)
+			weather.GET("/historical/:regionCode/range", weatherHandler.GetHistoricalWeatherDataRange)
+			weather.GET("/historical-range", weatherHandler.GetAvailableHistoricalDataRange)
+			
+			// 三重県鈴鹿市専用API
+			weather.GET("/suzuka/monthly", weatherHandler.GetSuzukaMonthlyWeatherSummary)
+			weather.GET("/analysis/:regionCode", weatherHandler.GetWeatherDataAnalysis)
+			weather.GET("/analysis", weatherHandler.GetWeatherDataAnalysis) // デフォルト：三重県
+			weather.GET("/trends/:regionCode", weatherHandler.GetWeatherTrendAnalysis)
+			weather.GET("/trends", weatherHandler.GetWeatherTrendAnalysis) // デフォルト：三重県
+			weather.GET("/category/:regionCode", weatherHandler.GetWeatherDataByCategory)
+			weather.GET("/category", weatherHandler.GetWeatherDataByCategory) // デフォルト：三重県
+		}
+
+		// 需要予測API
+		demand := v1.Group("/demand")
+		{
+			demand.POST("/forecast", demandForecastHandler.PredictDemand)
+			demand.GET("/forecast/suzuka", demandForecastHandler.GetDemandForecastForSuzuka)
+			demand.GET("/settings", demandForecastHandler.GetDemandForecastSettings)
+			demand.GET("/insights/:regionCode", demandForecastHandler.GetDemandInsights)
+			demand.GET("/insights", demandForecastHandler.GetDemandInsights) // デフォルト：三重県
+			demand.GET("/analytics/:regionCode", demandForecastHandler.GetDemandAnalytics)
+			demand.GET("/analytics", demandForecastHandler.GetDemandAnalytics) // デフォルト：三重県
+			demand.GET("/anomalies", demandForecastHandler.DetectAnomalies)      // 異常検知
+		}
+
+		// AI統合API
+		ai := v1.Group("/ai")
+		{
+			ai.GET("/capabilities", aiHandler.GetAICapabilities)
+			ai.POST("/analyze-weather", aiHandler.AnalyzeWeatherData)
+			ai.POST("/demand-insights", aiHandler.GenerateDemandInsights)
+			ai.POST("/predict-demand", aiHandler.PredictDemandWithAI)
+			ai.POST("/explain-forecast", aiHandler.ExplainForecast)
+		}
+	}
+
+	// サーバー起動
+	log.Println("Starting HUNT Chat-API server on :8080")
+	if err := r.Run(":8080"); err != nil {
+		log.Fatal("Failed to start server:", err)
+	}
+}
