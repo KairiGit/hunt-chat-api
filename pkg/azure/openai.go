@@ -13,11 +13,11 @@ import (
 
 // OpenAIClient Azure OpenAI REST API クライアント
 type OpenAIClient struct {
-	endpoint    string
-	apiKey      string
-	apiVersion  string
-	deployment  string
-	httpClient  *http.Client
+	endpoint   string
+	apiKey     string
+	apiVersion string
+	deployment string
+	httpClient *http.Client
 }
 
 // NewOpenAIClient 新しいAzure OpenAI クライアントを作成
@@ -42,11 +42,11 @@ type ChatMessage struct {
 // ChatCompletionRequest チャット補完リクエスト
 type ChatCompletionRequest struct {
 	Messages    []ChatMessage `json:"messages"`
-	MaxTokens   int          `json:"max_tokens,omitempty"`
-	Temperature float32      `json:"temperature,omitempty"`
-	TopP        float32      `json:"top_p,omitempty"`
-	Stop        []string     `json:"stop,omitempty"`
-	Stream      bool         `json:"stream,omitempty"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
+	Temperature float32       `json:"temperature,omitempty"`
+	TopP        float32       `json:"top_p,omitempty"`
+	Stop        []string      `json:"stop,omitempty"`
+	Stream      bool          `json:"stream,omitempty"`
 }
 
 // ChatCompletionResponse チャット補完レスポンス
@@ -92,7 +92,7 @@ func (c *OpenAIClient) ChatCompletion(ctx context.Context, messages []ChatMessag
 		url = c.endpoint
 	} else {
 		// 通常のAzure OpenAI URLの場合
-		url = fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s", 
+		url = fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
 			c.endpoint, c.deployment, c.apiVersion)
 	}
 

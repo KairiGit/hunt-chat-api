@@ -393,6 +393,36 @@ Content-Type: application/json
 }
 ```
 
+##### 異常検知に基づく質問生成
+
+```http
+GET /api/v1/ai/generate-question
+```
+
+システムが自動で検知した需要の異常データに基づき、原因究明のための質問をAIが生成します。
+
+**クエリパラメータ**:
+- `region_code`: 地域コード（省略可、デフォルト: `240000`（三重県））
+- `days`: 分析対象の日数（省略可、デフォルト: `30`）
+
+**レスポンス例**:
+```json
+{
+  "success": true,
+  "message": "異常を検知し、質問を生成しました。",
+  "question": "8月8日のミネラルウォーターの売上が特に高かったようですが、この日は何か特別な販促活動やイベントがありましたか？",
+  "source_anomaly": {
+      "date": "2025-08-08",
+      "product_id": "P001",
+      "description": "猛暑日（32.5℃）に売上が平均（110個）を大幅に上回りました（300個）。",
+      "impact_score": 2.95,
+      "trigger": "weather_sales_high",
+      "weather": "晴れ",
+      "temperature": 32.5
+    }
+}
+```
+
 ### APIの利用例（curl）
 
 #### ヘルスチェック

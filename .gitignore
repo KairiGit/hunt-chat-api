@@ -46,3 +46,6 @@ Thumbs.db
 tmp/
 bin/
 build-errors.log
+
+# Archives
+*.tar.gz

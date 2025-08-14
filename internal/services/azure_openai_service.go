@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"hunt-chat-api/internal/models"
 	"hunt-chat-api/pkg/azure"
 )
 
@@ -93,7 +94,7 @@ func (aos *AzureOpenAIService) CreateChatCompletion(messages []ChatMessage, maxT
 			Content string `json:"content"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
-	}, len(response.Choices))
+	}, len(response.Choices)) // Corrected: response.Choices instead of response.Choices
 
 	for i, choice := range response.Choices {
 		chatResponse.Choices[i].Index = choice.Index
@@ -135,4 +136,32 @@ func (aos *AzureOpenAIService) ExplainForecast(forecastData, factors string) (st
 	defer cancel()
 
 	return aos.client.ExplainPrediction(ctx, forecastData, factors)
+}
+
+// GenerateQuestionFromAnomaly 異常データから質問を生成する
+func (aos *AzureOpenAIService) GenerateQuestionFromAnomaly(anomaly models.Anomaly) (string, error) {
+	// プロンプトの構築
+	prompt := fmt.Sprintf(
+		"あなたは優秀な需要予測コンサルタントです。以下の異常データについて、担当者が原因を特定しやすくなるような、自然で具体的な質問を日本語で1つだけ生成してください。質問以外の余計な言葉は含めないでください。\n\n## 異常データ\n- **発生日**: %s\n- **製品**: %s\n- **事象**: %s\n\n## 質問の例\n- 「この日は何か特別な販促活動やイベントがありましたか？」\n- 「この時期の競合他社の動きで、何か特筆すべきことはありましたか？」\n- 「この日の天候は、過去のデータと比較してどの程度珍しいものだったのでしょうか？」",
+		anomaly.Date,
+		anomaly.ProductID,
+		anomaly.Description,
+	)
+
+	messages := []ChatMessage{
+		{Role: "system", Content: "あなたは、需要予測の専門家として、データから読み取れる異常について質問を生成するAIです。"},
+		{Role: "user", Content: prompt},
+	}
+
+	// Azure OpenAI にリクエストを送信
+	resp, err := aos.CreateChatCompletion(messages, 150, 0.7)
+	if err != nil {
+		return "", fmt.Errorf("AIからの質問生成に失敗しました: %w", err)
+	}
+
+	if len(resp.Choices) > 0 {
+		return resp.Choices[0].Message.Content, nil
+	}
+
+	return "", fmt.Errorf("AIから有効な回答が得られませんでした")
 }

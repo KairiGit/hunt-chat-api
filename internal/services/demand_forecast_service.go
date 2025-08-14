@@ -26,7 +26,7 @@ func (dfs *DemandForecastService) loadSalesData(days int) []models.SalesRecord {
 	baseSales := 100
 	for i := 0; i < days; i++ {
 		date := time.Now().AddDate(0, 0, -days+i)
-		sales := baseSales + (i % 10) * 10 // 通常の変動
+		sales := baseSales + (i%10)*10 // 通常の変動
 		// 異常な売上を意図的に挿入
 		if i == days-5 { // 5日前に猛暑日で売上急増
 			sales = 300
@@ -112,13 +112,13 @@ func (dfs *DemandForecastService) DetectAnomalies(regionCode string, days int) (
 
 // DemandForecastRequest 需要予測リクエスト構造体
 type DemandForecastRequest struct {
-	RegionCode       string              `json:"region_code"`
-	ProductCategory  string              `json:"product_category"`
-	ForecastDays     int                 `json:"forecast_days"`
-	HistoricalDays   int                 `json:"historical_days"`
-	TacitKnowledge   []TacitKnowledgeItem `json:"tacit_knowledge"`
-	SeasonalFactors  SeasonalFactors     `json:"seasonal_factors"`
-	ExternalFactors  ExternalFactors     `json:"external_factors"`
+	RegionCode      string               `json:"region_code"`
+	ProductCategory string               `json:"product_category"`
+	ForecastDays    int                  `json:"forecast_days"`
+	HistoricalDays  int                  `json:"historical_days"`
+	TacitKnowledge  []TacitKnowledgeItem `json:"tacit_knowledge"`
+	SeasonalFactors SeasonalFactors      `json:"seasonal_factors"`
+	ExternalFactors ExternalFactors      `json:"external_factors"`
 }
 
 // TacitKnowledgeItem 暗黙知項目
@@ -139,56 +139,56 @@ type SeasonalFactors struct {
 
 // ExternalFactors 外部要因
 type ExternalFactors struct {
-	EconomicIndex        float64 `json:"economic_index"`
-	CompetitorActivity   float64 `json:"competitor_activity"`
-	MarketingCampaign    float64 `json:"marketing_campaign"`
+	EconomicIndex         float64 `json:"economic_index"`
+	CompetitorActivity    float64 `json:"competitor_activity"`
+	MarketingCampaign     float64 `json:"marketing_campaign"`
 	SupplyChainDisruption float64 `json:"supply_chain_disruption"`
 }
 
 // DemandForecastResponse 需要予測結果
 type DemandForecastResponse struct {
-	RegionCode      string                `json:"region_code"`
-	RegionName      string                `json:"region_name"`
-	ProductCategory string                `json:"product_category"`
-	ForecastPeriod  string                `json:"forecast_period"`
-	Forecasts       []DemandForecastItem  `json:"forecasts"`
-	Statistics      DemandStatistics      `json:"statistics"`
-	Confidence      ConfidenceMetrics     `json:"confidence"`
-	Explanations    []ExplanationItem     `json:"explanations"`
-	GeneratedAt     string                `json:"generated_at"`
+	RegionCode      string               `json:"region_code"`
+	RegionName      string               `json:"region_name"`
+	ProductCategory string               `json:"product_category"`
+	ForecastPeriod  string               `json:"forecast_period"`
+	Forecasts       []DemandForecastItem `json:"forecasts"`
+	Statistics      DemandStatistics     `json:"statistics"`
+	Confidence      ConfidenceMetrics    `json:"confidence"`
+	Explanations    []ExplanationItem    `json:"explanations"`
+	GeneratedAt     string               `json:"generated_at"`
 }
 
 // DemandForecastItem 需要予測項目
 type DemandForecastItem struct {
-	Date            string                `json:"date"`
-	PredictedDemand float64               `json:"predicted_demand"`
-	ConfidenceLevel float64               `json:"confidence_level"`
-	WeatherImpact   float64               `json:"weather_impact"`
-	SeasonalImpact  float64               `json:"seasonal_impact"`
-	TacitImpact     float64               `json:"tacit_impact"`
-	ExternalImpact  float64               `json:"external_impact"`
-	WeatherData     DailyWeatherSummary   `json:"weather_data"`
-	Factors         []InfluencingFactor   `json:"factors"`
+	Date            string              `json:"date"`
+	PredictedDemand float64             `json:"predicted_demand"`
+	ConfidenceLevel float64             `json:"confidence_level"`
+	WeatherImpact   float64             `json:"weather_impact"`
+	SeasonalImpact  float64             `json:"seasonal_impact"`
+	TacitImpact     float64             `json:"tacit_impact"`
+	ExternalImpact  float64             `json:"external_impact"`
+	WeatherData     DailyWeatherSummary `json:"weather_data"`
+	Factors         []InfluencingFactor `json:"factors"`
 }
 
 // DemandStatistics 需要統計
 type DemandStatistics struct {
-	AverageDemand   float64 `json:"average_demand"`
-	MaxDemand       float64 `json:"max_demand"`
-	MinDemand       float64 `json:"min_demand"`
-	StandardDev     float64 `json:"standard_deviation"`
-	TotalDemand     float64 `json:"total_demand"`
-	GrowthRate      float64 `json:"growth_rate"`
-	Volatility      float64 `json:"volatility"`
+	AverageDemand float64 `json:"average_demand"`
+	MaxDemand     float64 `json:"max_demand"`
+	MinDemand     float64 `json:"min_demand"`
+	StandardDev   float64 `json:"standard_deviation"`
+	TotalDemand   float64 `json:"total_demand"`
+	GrowthRate    float64 `json:"growth_rate"`
+	Volatility    float64 `json:"volatility"`
 }
 
 // ConfidenceMetrics 信頼度メトリクス
 type ConfidenceMetrics struct {
-	OverallConfidence float64 `json:"overall_confidence"`
-	WeatherConfidence float64 `json:"weather_confidence"`
+	OverallConfidence  float64 `json:"overall_confidence"`
+	WeatherConfidence  float64 `json:"weather_confidence"`
 	SeasonalConfidence float64 `json:"seasonal_confidence"`
-	TacitConfidence   float64 `json:"tacit_confidence"`
-	ModelAccuracy     float64 `json:"model_accuracy"`
+	TacitConfidence    float64 `json:"tacit_confidence"`
+	ModelAccuracy      float64 `json:"model_accuracy"`
 }
 
 // ExplanationItem 説明項目
@@ -260,22 +260,22 @@ func (dfs *DemandForecastService) calculateDemandForecasts(
 	// 予測日数分のデータを生成
 	for i := 0; i < request.ForecastDays; i++ {
 		forecastDate := time.Now().AddDate(0, 0, i+1)
-		
+
 		// 気象影響を計算
 		weatherImpact := dfs.calculateWeatherImpact(request.ProductCategory, forecastDate, forecastData)
-		
+
 		// 季節影響を計算
 		seasonalImpact := dfs.calculateSeasonalImpact(request.ProductCategory, forecastDate, request.SeasonalFactors)
-		
+
 		// 暗黙知影響を計算
 		tacitImpact := dfs.calculateTacitKnowledgeImpact(request.TacitKnowledge, forecastDate)
-		
+
 		// 外部要因影響を計算
 		externalImpact := dfs.calculateExternalFactorImpact(request.ExternalFactors, forecastDate)
 
 		// 総合需要を計算
 		totalDemand := baseDemand * (1 + weatherImpact + seasonalImpact + tacitImpact + externalImpact)
-		
+
 		// 信頼度を計算
 		confidence := dfs.calculateItemConfidence(weatherImpact, seasonalImpact, tacitImpact, externalImpact)
 
@@ -340,18 +340,18 @@ func (dfs *DemandForecastService) calculateWeatherImpact(productCategory string,
 		"飲料": {
 			"temperature_high": 0.8,  // 高温時の需要増加
 			"temperature_low":  -0.3, // 低温時の需要減少
-			"sunny":           0.2,  // 晴天時の需要増加
-			"rainy":           -0.1, // 雨天時の需要減少
+			"sunny":            0.2,  // 晴天時の需要増加
+			"rainy":            -0.1, // 雨天時の需要減少
 		},
 		"アイス": {
 			"temperature_high": 1.2,
 			"temperature_low":  -0.8,
-			"sunny":           0.5,
-			"rainy":           -0.3,
+			"sunny":            0.5,
+			"rainy":            -0.3,
 		},
 		"傘": {
-			"rainy":           2.0,  // 雨天時の大幅需要増加
-			"sunny":           -0.5, // 晴天時の需要減少
+			"rainy": 2.0,  // 雨天時の大幅需要増加
+			"sunny": -0.5, // 晴天時の需要減少
 		},
 	}
 
@@ -362,7 +362,7 @@ func (dfs *DemandForecastService) calculateWeatherImpact(productCategory string,
 
 	// 簡略化した気象影響計算
 	impact := 0.0
-	
+
 	// 気温影響（仮想的な気温データ）
 	temperature := 25.0 + float64(date.Day()%10) // 簡略化
 	if temperature > 30.0 {
@@ -473,10 +473,10 @@ func (dfs *DemandForecastService) calculateExternalFactorImpact(factors External
 func (dfs *DemandForecastService) calculateItemConfidence(weatherImpact, seasonalImpact, tacitImpact, externalImpact float64) float64 {
 	// 各影響の絶対値の合計に基づく信頼度計算
 	totalImpact := math.Abs(weatherImpact) + math.Abs(seasonalImpact) + math.Abs(tacitImpact) + math.Abs(externalImpact)
-	
+
 	// 影響が小さいほど信頼度が高い（逆相関）
 	confidence := 1.0 - (totalImpact / 4.0)
-	
+
 	// 信頼度を0.5-0.95の範囲に制限
 	if confidence < 0.5 {
 		confidence = 0.5

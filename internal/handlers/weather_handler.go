@@ -69,7 +69,7 @@ func (wh *WeatherHandler) GetTokyoWeatherData(c *gin.Context) {
 // GetRegionCodes 地域コード一覧を取得するハンドラー
 func (wh *WeatherHandler) GetRegionCodes(c *gin.Context) {
 	regionCodes := wh.weatherService.GetRegionCodes()
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    regionCodes,
@@ -80,7 +80,7 @@ func (wh *WeatherHandler) GetRegionCodes(c *gin.Context) {
 func (wh *WeatherHandler) TestWeatherAPI(c *gin.Context) {
 	// バックグラウンドでテストを実行
 	go wh.weatherService.TestWeatherAPI()
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "気象庁APIテストを開始しました。ログを確認してください。",
@@ -256,7 +256,7 @@ func (wh *WeatherHandler) GetHistoricalWeatherDataRange(c *gin.Context) {
 // GetAvailableHistoricalDataRange 利用可能な過去データの期間を取得
 func (wh *WeatherHandler) GetAvailableHistoricalDataRange(c *gin.Context) {
 	dataRange := wh.weatherService.GetAvailableHistoricalDataRange()
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    dataRange,
@@ -267,7 +267,7 @@ func (wh *WeatherHandler) GetAvailableHistoricalDataRange(c *gin.Context) {
 func (wh *WeatherHandler) GetSuzukaMonthlyWeatherSummary(c *gin.Context) {
 	// 三重県のコード: 240000
 	regionCode := "240000"
-	
+
 	// 過去30日分のデータを取得
 	days := 30
 	if daysStr := c.Query("days"); daysStr != "" {

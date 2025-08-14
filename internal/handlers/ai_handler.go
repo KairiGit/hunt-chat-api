@@ -12,15 +12,17 @@ import (
 
 // AIHandler AI統合ハンドラー
 type AIHandler struct {
-	azureOpenAIService *services.AzureOpenAIService
-	weatherService     *services.WeatherService
+	azureOpenAIService    *services.AzureOpenAIService
+	weatherService        *services.WeatherService
+	demandForecastService *services.DemandForecastService
 }
 
 // NewAIHandler 新しいAI統合ハンドラーを作成
-func NewAIHandler(azureOpenAIService *services.AzureOpenAIService, weatherService *services.WeatherService) *AIHandler {
+func NewAIHandler(azureOpenAIService *services.AzureOpenAIService, weatherService *services.WeatherService, demandForecastService *services.DemandForecastService) *AIHandler {
 	return &AIHandler{
-		azureOpenAIService: azureOpenAIService,
-		weatherService:     weatherService,
+		azureOpenAIService:    azureOpenAIService,
+		weatherService:        weatherService,
+		demandForecastService: demandForecastService,
 	}
 }
 
@@ -105,10 +107,10 @@ type GenerateDemandInsightsRequest struct {
 
 // GenerateDemandInsightsResponse 需要洞察生成レスポンス
 type GenerateDemandInsightsResponse struct {
-	RegionCode      string `json:"region_code"`
-	Period          string `json:"period"`
-	ProductCategory string `json:"product_category"`
-	Insights        string `json:"insights"`
+	RegionCode      string   `json:"region_code"`
+	Period          string   `json:"period"`
+	ProductCategory string   `json:"product_category"`
+	Insights        string   `json:"insights"`
 	Recommendations []string `json:"recommendations"`
 }
 
@@ -191,11 +193,11 @@ type PredictDemandWithAIRequest struct {
 
 // PredictDemandWithAIResponse AI需要予測レスポンス
 type PredictDemandWithAIResponse struct {
-	RegionCode      string  `json:"region_code"`
-	Period          string  `json:"period"`
-	ProductCategory string  `json:"product_category"`
-	Prediction      string  `json:"prediction"`
-	Confidence      float64 `json:"confidence"`
+	RegionCode      string   `json:"region_code"`
+	Period          string   `json:"period"`
+	ProductCategory string   `json:"product_category"`
+	Prediction      string   `json:"prediction"`
+	Confidence      float64  `json:"confidence"`
 	Factors         []string `json:"factors"`
 }
 
@@ -279,7 +281,7 @@ type ExplainForecastRequest struct {
 
 // ExplainForecastResponse 予測説明レスポンス
 type ExplainForecastResponse struct {
-	Explanation string `json:"explanation"`
+	Explanation string   `json:"explanation"`
 	KeyFactors  []string `json:"key_factors"`
 }
 
@@ -347,5 +349,56 @@ func (ah *AIHandler) GetAICapabilities(c *gin.Context) {
 		"success":      true,
 		"capabilities": capabilities,
 		"ai_service":   "Azure OpenAI",
+	})
+}
+
+// GenerateAnomalyQuestion 異常検知結果から質問を生成する
+func (ah *AIHandler) GenerateAnomalyQuestion(c *gin.Context) {
+	regionCode := c.Query("region_code")
+	if regionCode == "" {
+		regionCode = "240000" // デフォルト：三重県
+	}
+
+	days := 30
+	if daysStr := c.Query("days"); daysStr != "" {
+		if d, err := strconv.Atoi(daysStr); err == nil && d > 0 && d <= 365 {
+			days = d
+		}
+	}
+
+	// 1. 異常を検知
+	anomalies, err := ah.demandForecastService.DetectAnomalies(regionCode, days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "異常検知の実行に失敗しました: " + err.Error(),
+		})
+		return
+	}
+
+	if len(anomalies) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success":  true,
+			"message":  "特筆すべき異常は見つかりませんでした。",
+			"question": "",
+		})
+		return
+	}
+
+	// 2. 最初の異常から質問を生成
+	// 簡単のため、最初の異常を使用する
+	targetAnomaly := anomalies[0]
+	question, err := ah.azureOpenAIService.GenerateQuestionFromAnomaly(targetAnomaly)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "AIからの質問生成に失敗しました: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":        true,
+		"message":        "異常を検知し、質問を生成しました。",
+		"question":       question,
+		"source_anomaly": targetAnomaly,
 	})
 }

@@ -21,7 +21,7 @@ func TestLoadConfig(t *testing.T) {
 	for key, value := range testCases {
 		os.Setenv(key, value)
 	}
-	
+
 	// テスト後にクリーンアップ
 	defer func() {
 		for key := range testCases {
@@ -57,11 +57,11 @@ func TestLoadConfig(t *testing.T) {
 func TestLoadConfigDefaults(t *testing.T) {
 	// 環境変数をクリア
 	vars := []string{
-		"PORT", "ENVIRONMENT", "AZURE_OPENAI_ENDPOINT", 
+		"PORT", "ENVIRONMENT", "AZURE_OPENAI_ENDPOINT",
 		"AZURE_OPENAI_API_KEY", "AZURE_OPENAI_MODEL",
 		"AZURE_OPENAI_API_VERSION", "AZURE_OPENAI_DEPLOYMENT_NAME",
 	}
-	
+
 	for _, v := range vars {
 		os.Unsetenv(v)
 	}

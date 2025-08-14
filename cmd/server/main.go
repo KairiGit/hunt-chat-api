@@ -22,7 +22,7 @@ func main() {
 	cfg := config.LoadConfig()
 	// ログにAPIキーとエンドポイントを出力（デバッグ用）
 	log.Printf("DEBUG: Loaded AZURE_OPENAI_API_KEY (first 10 chars): %s...", cfg.AzureOpenAIAPIKey[:min(10, len(cfg.AzureOpenAIAPIKey))])
-    log.Printf("DEBUG: Loaded AZURE_OPENAI_ENDPOINT: %s", cfg.AzureOpenAIEndpoint)
+	log.Printf("DEBUG: Loaded AZURE_OPENAI_ENDPOINT: %s", cfg.AzureOpenAIEndpoint)
 
 	// Ginルーターの初期化
 	r := gin.Default()
@@ -38,12 +38,12 @@ func main() {
 	// ハンドラーの初期化
 	weatherHandler := handlers.NewWeatherHandler()
 	demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
-	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService())
+	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), demandForecastHandler.GetDemandForecastService())
 
 	// ヘルスチェックエンドポイント
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"status": "healthy",
+			"status":  "healthy",
 			"service": "HUNT Chat-API",
 		})
 	})
@@ -66,14 +66,14 @@ func main() {
 			weather.GET("/forecast", weatherHandler.GetForecastData) // デフォルト：東京
 			weather.GET("/tokyo", weatherHandler.GetTokyoWeatherData)
 			weather.GET("/region/:regionCode", weatherHandler.GetWeatherByRegion)
-			
+
 			// 過去データAPI
 			weather.GET("/historical/:regionCode", weatherHandler.GetHistoricalWeatherData)
 			weather.GET("/historical", weatherHandler.GetHistoricalWeatherData) // デフォルト：東京
 			weather.GET("/historical/:regionCode/date", weatherHandler.GetHistoricalWeatherDataByDate)
 			weather.GET("/historical/:regionCode/range", weatherHandler.GetHistoricalWeatherDataRange)
 			weather.GET("/historical-range", weatherHandler.GetAvailableHistoricalDataRange)
-			
+
 			// 三重県鈴鹿市専用API
 			weather.GET("/suzuka/monthly", weatherHandler.GetSuzukaMonthlyWeatherSummary)
 			weather.GET("/analysis/:regionCode", weatherHandler.GetWeatherDataAnalysis)
@@ -94,7 +94,7 @@ func main() {
 			demand.GET("/insights", demandForecastHandler.GetDemandInsights) // デフォルト：三重県
 			demand.GET("/analytics/:regionCode", demandForecastHandler.GetDemandAnalytics)
 			demand.GET("/analytics", demandForecastHandler.GetDemandAnalytics) // デフォルト：三重県
-			demand.GET("/anomalies", demandForecastHandler.DetectAnomalies)      // 異常検知
+			demand.GET("/anomalies", demandForecastHandler.DetectAnomalies)    // 異常検知
 		}
 
 		// AI統合API
@@ -105,6 +105,7 @@ func main() {
 			ai.POST("/demand-insights", aiHandler.GenerateDemandInsights)
 			ai.POST("/predict-demand", aiHandler.PredictDemandWithAI)
 			ai.POST("/explain-forecast", aiHandler.ExplainForecast)
+			ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
 		}
 	}
 

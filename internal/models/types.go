@@ -15,16 +15,16 @@ type ChatResponse struct {
 
 // DemandForecastRequest represents a demand forecast request
 type DemandForecastRequest struct {
-	ProductID      string                 `json:"product_id" binding:"required"`
-	TimeRange      string                 `json:"time_range" binding:"required"`
-	HistoricalData []HistoricalDataPoint  `json:"historical_data"`
+	ProductID       string                 `json:"product_id" binding:"required"`
+	TimeRange       string                 `json:"time_range" binding:"required"`
+	HistoricalData  []HistoricalDataPoint  `json:"historical_data"`
 	ExternalFactors map[string]interface{} `json:"external_factors,omitempty"`
 }
 
 // HistoricalDataPoint represents a single data point in historical data
 type HistoricalDataPoint struct {
-	Date   string  `json:"date"`
-	Sales  float64 `json:"sales"`
+	Date   string   `json:"date"`
+	Sales  float64  `json:"sales"`
 	Events []string `json:"events,omitempty"`
 }
 

@@ -21,6 +21,11 @@ func NewDemandForecastHandler(weatherService *services.WeatherService) *DemandFo
 	}
 }
 
+// GetDemandForecastService は、ハンドラーが持つ需要予測サービスへの参照を返す
+func (dfh *DemandForecastHandler) GetDemandForecastService() *services.DemandForecastService {
+	return dfh.demandForecastService
+}
+
 // PredictDemand 需要予測を実行
 func (dfh *DemandForecastHandler) PredictDemand(c *gin.Context) {
 	var request services.DemandForecastRequest
@@ -124,13 +129,13 @@ func (dfh *DemandForecastHandler) GetDemandForecastForSuzuka(c *gin.Context) {
 
 	// リクエストを構築
 	request := services.DemandForecastRequest{
-		RegionCode:       "240000", // 三重県
-		ProductCategory:  productCategory,
-		ForecastDays:     forecastDays,
-		HistoricalDays:   historicalDays,
-		TacitKnowledge:   tacitKnowledge,
-		SeasonalFactors:  seasonalFactors,
-		ExternalFactors:  externalFactors,
+		RegionCode:      "240000", // 三重県
+		ProductCategory: productCategory,
+		ForecastDays:    forecastDays,
+		HistoricalDays:  historicalDays,
+		TacitKnowledge:  tacitKnowledge,
+		SeasonalFactors: seasonalFactors,
+		ExternalFactors: externalFactors,
 	}
 
 	// 需要予測を実行
@@ -290,13 +295,13 @@ func (dfh *DemandForecastHandler) GetDemandAnalytics(c *gin.Context) {
 		"product_category": productCategory,
 		"analysis_period":  days,
 		"demand_patterns": gin.H{
-			"peak_days":    []string{"土曜日", "日曜日", "祝日"},
-			"low_days":     []string{"火曜日", "水曜日"},
+			"peak_days":      []string{"土曜日", "日曜日", "祝日"},
+			"low_days":       []string{"火曜日", "水曜日"},
 			"seasonal_peaks": []string{"7月", "8月", "12月"},
 		},
 		"weather_correlation": gin.H{
-			"temperature_correlation": 0.85,
-			"humidity_correlation":    -0.3,
+			"temperature_correlation":   0.85,
+			"humidity_correlation":      -0.3,
 			"precipitation_correlation": -0.4,
 		},
 		"forecast_accuracy": gin.H{
@@ -305,9 +310,9 @@ func (dfh *DemandForecastHandler) GetDemandAnalytics(c *gin.Context) {
 			"last_90_days": 0.79,
 		},
 		"performance_metrics": gin.H{
-			"mae":  45.2,  // 平均絶対誤差
-			"mape": 8.5,   // 平均絶対パーセント誤差
-			"rmse": 67.8,  // 二乗平均平方根誤差
+			"mae":  45.2, // 平均絶対誤差
+			"mape": 8.5,  // 平均絶対パーセント誤差
+			"rmse": 67.8, // 二乗平均平方根誤差
 		},
 		"generated_at": "2025-07-18 02:20:22",
 	}
