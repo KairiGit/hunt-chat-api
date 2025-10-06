@@ -37,8 +37,12 @@ export default function Home() {
       } else {
         throw new Error('Failed to get weather data from API');
       }
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError('An unknown error occurred');
+      }
     } finally {
       setLoading(false);
     }
