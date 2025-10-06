@@ -8,6 +8,7 @@ import (
 	"hunt-chat-api/internal/handlers"
 	"hunt-chat-api/internal/services"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
@@ -26,6 +27,9 @@ func main() {
 
 	// Ginルーターの初期化
 	r := gin.Default()
+
+	// CORSミドルウェアの設定
+	r.Use(cors.Default())
 
 	// サービスの初期化
 	azureOpenAIService := services.NewAzureOpenAIService(
