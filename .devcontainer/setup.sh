@@ -20,6 +20,22 @@ sudo apt-get install -y \
     vim \
     htop
 
+# Install Node.js and npm
+echo "📦 Installing Node.js and npm..."
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Install Homebrew
+echo "🍺 Installing Homebrew..."
+NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+(echo; echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"') >> /home/vscode/.bashrc
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+echo "Homebrew installed."
+
+# Install gemini-cli
+echo "♊ Installing gemini-cli..."
+npm install -g @google/gemini-cli
+
 # Install Go tools
 echo "📦 Installing Go tools..."
 go install golang.org/x/tools/cmd/goimports@latest
