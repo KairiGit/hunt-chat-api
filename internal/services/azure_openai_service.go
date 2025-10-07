@@ -166,16 +166,16 @@ func (aos *AzureOpenAIService) GenerateQuestionFromAnomaly(anomaly models.Anomal
 	return "", fmt.Errorf("AIから有効な回答が得られませんでした")
 }
 
-// ProcessChatWithData は、チャットメッセージとオプションのデータを受け取り、AIで処理します。
-func (aos *AzureOpenAIService) ProcessChatWithData(chatMessage string, data string) (string, error) {
+// ProcessChatWithContext は、チャットメッセージと事前の分析コンテキストを受け取り、AIで処理します。
+func (aos *AzureOpenAIService) ProcessChatWithContext(chatMessage string, context string) (string, error) {
 	// システムプロンプトを定義
-	systemPrompt := "あなたは、需要予測の専門家アシスタントです。ユーザーから提供された販売実績データ、気象データ、および定性的な情報（経験や勘）を統合的に分析し、需要予測に関する質問に答えたり、新しい予測を生成したりします。"
+	systemPrompt := "あなたは、需要予測の専門家アシスタントです。ユーザーから提供された分析コンテキスト（ファイル概要、統計、データサンプル）と、追加の定性的な情報（経験や勘）を統合的に分析し、需要予測に関する質問に答えてください。"
 
 	// ユーザープロンプトを構築
 	userPrompt := fmt.Sprintf("以下の情報を考慮して、回答してください。\n\n## ユーザーからのメッセージ\n%s\n", chatMessage)
 
-	if data != "" {
-		userPrompt += fmt.Sprintf("\n## アップロードされたデータ (CSV形式)\n%s\n", data)
+	if context != "" {
+		userPrompt += fmt.Sprintf("\n## 事前分析コンテキスト\n%s\n", context)
 	}
 
 	messages := []ChatMessage{
@@ -184,7 +184,7 @@ func (aos *AzureOpenAIService) ProcessChatWithData(chatMessage string, data stri
 	}
 
 	// Azure OpenAI にリクエストを送信
-	resp, err := aos.CreateChatCompletion(messages, 1000, 0.7)
+	resp, err := aos.CreateChatCompletion(messages, 2000, 0.7)
 	if err != nil {
 		return "", fmt.Errorf("AI処理中にエラーが発生しました: %w", err)
 	}

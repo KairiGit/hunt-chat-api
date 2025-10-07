@@ -112,6 +112,7 @@ func main() {
 			ai.POST("/explain-forecast", aiHandler.ExplainForecast)
 			ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
 			ai.POST("/chat-input", aiHandler.ChatInput)
+			ai.POST("/analyze-file", aiHandler.AnalyzeFile)
 		}
 	}
 
