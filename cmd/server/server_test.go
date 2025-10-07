@@ -40,6 +40,7 @@ func TestApplicationSetup(t *testing.T) {
 		cfg.AzureOpenAIAPIKey,
 		cfg.AzureOpenAIAPIVersion,
 		cfg.AzureOpenAIDeploymentName,
+		cfg.AzureOpenAIProxyURL,
 	)
 	assert.NotNil(t, azureOpenAIService, "AzureOpenAIService should not be nil")
 

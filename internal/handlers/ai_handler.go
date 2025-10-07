@@ -1,13 +1,17 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"hunt-chat-api/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xuri/excelize/v2"
 )
 
 // AIHandler AI統合ハンドラー
@@ -400,5 +404,64 @@ func (ah *AIHandler) GenerateAnomalyQuestion(c *gin.Context) {
 		"message":        "異常を検知し、質問を生成しました。",
 		"question":       question,
 		"source_anomaly": targetAnomaly,
+	})
+}
+
+// ChatInput は、チャットメッセージとオプションのExcelファイルを受け取り、AIで処理します。
+func (ah *AIHandler) ChatInput(c *gin.Context) {
+	// マルチパートフォームの解析にメモリ制限を設定 (例: 10MB)
+	c.Request.ParseMultipartForm(10 << 20)
+
+	// フォームからチャットメッセージを取得
+	chatMessage := c.PostForm("chat_message")
+	if chatMessage == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "チャットメッセージが必要です。"})
+		return
+	}
+
+	// フォームからファイルを取得
+	file, fileHeader, err := c.Request.FormFile("file")
+	var excelData string
+	if err == nil {
+		defer file.Close()
+
+		f, err := excelize.OpenReader(file)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Excelファイルの読み込みに失敗しました。"})
+			return
+		}
+
+		// 最初のシート名を取得
+		sheetName := f.GetSheetName(0)
+		rows, err := f.GetRows(sheetName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Excelシートの行取得に失敗しました。"})
+			return
+		}
+
+		// CSV形式の文字列に変換
+		var buf bytes.Buffer
+		w := csv.NewWriter(&buf)
+		if err := w.WriteAll(rows); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "ExcelデータのCSVへの変換に失敗しました。"})
+			return
+		}
+		excelData = buf.String()
+
+		fmt.Printf("Uploaded file: %s, Size: %d, Data: %s\n", fileHeader.Filename, fileHeader.Size, excelData[:100])
+	}
+
+	// AIサービスを呼び出し
+	aiResponse, err := ah.azureOpenAIService.ProcessChatWithData(chatMessage, excelData)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI処理中にエラーが発生しました: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"response": gin.H{
+			"text": aiResponse,
+		},
 	})
 }

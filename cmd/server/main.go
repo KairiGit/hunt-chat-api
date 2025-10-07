@@ -37,6 +37,7 @@ func main() {
 		cfg.AzureOpenAIAPIKey,
 		cfg.AzureOpenAIAPIVersion,
 		cfg.AzureOpenAIDeploymentName,
+		cfg.AzureOpenAIProxyURL,
 	)
 
 	// ハンドラーの初期化
@@ -110,6 +111,7 @@ func main() {
 			ai.POST("/predict-demand", aiHandler.PredictDemandWithAI)
 			ai.POST("/explain-forecast", aiHandler.ExplainForecast)
 			ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
+			ai.POST("/chat-input", aiHandler.ChatInput)
 		}
 	}
 

@@ -12,6 +12,7 @@ type Config struct {
 	AzureOpenAIModel          string
 	AzureOpenAIAPIVersion     string
 	AzureOpenAIDeploymentName string
+	AzureOpenAIProxyURL       string
 	Environment               string
 	OpenWeatherMapAPIKey      string
 }
@@ -25,6 +26,7 @@ func LoadConfig() *Config {
 		AzureOpenAIModel:          getEnv("AZURE_OPENAI_MODEL", "gpt-4o-mini"),
 		AzureOpenAIAPIVersion:     getEnv("AZURE_OPENAI_API_VERSION", "2023-12-01-preview"),
 		AzureOpenAIDeploymentName: getEnv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini"),
+		AzureOpenAIProxyURL:       getEnv("AZURE_OPENAI_PROXY_URL", ""),
 		Environment:               getEnv("ENVIRONMENT", "development"),
 		OpenWeatherMapAPIKey:      getEnv("OPENWEATHERMAP_API_KEY", ""),
 	}

@@ -17,16 +17,18 @@ type OpenAIClient struct {
 	apiKey     string
 	apiVersion string
 	deployment string
+	proxyURL   string
 	httpClient *http.Client
 }
 
 // NewOpenAIClient 新しいAzure OpenAI クライアントを作成
-func NewOpenAIClient(endpoint, apiKey, apiVersion, deployment string) *OpenAIClient {
+func NewOpenAIClient(endpoint, apiKey, apiVersion, deployment, proxyURL string) *OpenAIClient {
 	return &OpenAIClient{
 		endpoint:   endpoint,
 		apiKey:     apiKey,
 		apiVersion: apiVersion,
 		deployment: deployment,
+		proxyURL:   proxyURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -85,15 +87,15 @@ func (c *OpenAIClient) ChatCompletion(ctx context.Context, messages []ChatMessag
 		return nil, fmt.Errorf("API key が設定されていません")
 	}
 
-	// リクエストURL（プロキシ対応）
+	// リクエストURLを決定
 	var url string
-	if strings.Contains(c.endpoint, "/chat/completions") {
-		// プロキシURLの場合、そのまま使用
-		url = c.endpoint
+	if c.proxyURL != "" {
+		// プロキシURLが設定されていれば、それを最優先で使用
+		url = c.proxyURL
 	} else {
-		// 通常のAzure OpenAI URLの場合
+		// 通常のAzure OpenAI URLを組み立て
 		url = fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
-			c.endpoint, c.deployment, c.apiVersion)
+			strings.TrimSuffix(c.endpoint, "/"), c.deployment, c.apiVersion)
 	}
 
 	// リクエストボディの作成
@@ -118,7 +120,7 @@ func (c *OpenAIClient) ChatCompletion(ctx context.Context, messages []ChatMessag
 
 	// ヘッダーの設定
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("api-key", c.apiKey)
 
 	// デバッグ情報をログ出力
 	fmt.Printf("DEBUG: リクエストURL: %s\n", url)
