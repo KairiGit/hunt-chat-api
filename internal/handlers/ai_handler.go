@@ -244,8 +244,12 @@ func (ah *AIHandler) AnalyzeWeatherData(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "リクエストの形式が正しくありません"})
 		return
 	}
-	if req.RegionCode == "" { req.RegionCode = "240000" }
-	if req.Days == 0 { req.Days = 30 }
+	if req.RegionCode == "" {
+		req.RegionCode = "240000"
+	}
+	if req.Days == 0 {
+		req.Days = 30
+	}
 	weatherSummary, err := ah.weatherService.GetSuzukaWeatherSummary(req.Days, "daily")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "気象データの取得に失敗しました"})
@@ -290,9 +294,15 @@ func (ah *AIHandler) GenerateDemandInsights(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "リクエストの形式が正しくありません"})
 		return
 	}
-	if req.RegionCode == "" { req.RegionCode = "240000" }
-	if req.Days == 0 { req.Days = 30 }
-	if req.ProductCategory == "" { req.ProductCategory = "一般製造業" }
+	if req.RegionCode == "" {
+		req.RegionCode = "240000"
+	}
+	if req.Days == 0 {
+		req.Days = 30
+	}
+	if req.ProductCategory == "" {
+		req.ProductCategory = "一般製造業"
+	}
 	weatherSummary, err := ah.weatherService.GetSuzukaWeatherSummary(req.Days, "daily")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "気象データの取得に失敗しました"})
@@ -341,9 +351,15 @@ func (ah *AIHandler) PredictDemandWithAI(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "リクエストの形式が正しくありません"})
 		return
 	}
-	if req.RegionCode == "" { req.RegionCode = "240000" }
-	if req.Days == 0 { req.Days = 30 }
-	if req.ProductCategory == "" { req.ProductCategory = "一般製造業" }
+	if req.RegionCode == "" {
+		req.RegionCode = "240000"
+	}
+	if req.Days == 0 {
+		req.Days = 30
+	}
+	if req.ProductCategory == "" {
+		req.ProductCategory = "一般製造業"
+	}
 	weatherSummary, err := ah.weatherService.GetSuzukaWeatherSummary(req.Days, "daily")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "気象データの取得に失敗しました"})
@@ -412,7 +428,9 @@ func (ah *AIHandler) GetAICapabilities(c *gin.Context) {
 
 func (ah *AIHandler) GenerateAnomalyQuestion(c *gin.Context) {
 	regionCode := c.Query("region_code")
-	if regionCode == "" { regionCode = "240000" }
+	if regionCode == "" {
+		regionCode = "240000"
+	}
 	days := 30
 	if daysStr := c.Query("days"); daysStr != "" {
 		if d, err := strconv.Atoi(daysStr); err == nil && d > 0 && d <= 365 {
