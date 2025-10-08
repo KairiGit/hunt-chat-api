@@ -101,9 +101,9 @@ func TestRouterSetup(t *testing.T) {
 func TestEnvironmentVariables(t *testing.T) {
 	// テスト用の環境変数を設定
 	testEnvVars := map[string]string{
-		"AZURE_OPENAI_ENDPOINT": "https://test.openai.azure.com/",
-		"AZURE_OPENAI_API_KEY":  "test-key",
-		"AZURE_OPENAI_CHAT_DEPLOYMENT_NAME":    "gpt-4",
+		"AZURE_OPENAI_ENDPOINT":             "https://test.openai.azure.com/",
+		"AZURE_OPENAI_API_KEY":              "test-key",
+		"AZURE_OPENAI_CHAT_DEPLOYMENT_NAME": "gpt-4",
 	}
 
 	// 環境変数を設定
