@@ -15,8 +15,8 @@ type AzureOpenAIService struct {
 }
 
 // NewAzureOpenAIService 新しいAzure OpenAI サービスを作成
-func NewAzureOpenAIService(endpoint, apiKey, apiVersion, deploymentName string) *AzureOpenAIService {
-	client := azure.NewOpenAIClient(endpoint, apiKey, apiVersion, deploymentName)
+func NewAzureOpenAIService(endpoint, apiKey, apiVersion, deploymentName, proxyURL string) *AzureOpenAIService {
+	client := azure.NewOpenAIClient(endpoint, apiKey, apiVersion, deploymentName, proxyURL)
 	return &AzureOpenAIService{
 		client: client,
 	}
@@ -157,6 +157,36 @@ func (aos *AzureOpenAIService) GenerateQuestionFromAnomaly(anomaly models.Anomal
 	resp, err := aos.CreateChatCompletion(messages, 150, 0.7)
 	if err != nil {
 		return "", fmt.Errorf("AIからの質問生成に失敗しました: %w", err)
+	}
+
+	if len(resp.Choices) > 0 {
+		return resp.Choices[0].Message.Content, nil
+	}
+
+	return "", fmt.Errorf("AIから有効な回答が得られませんでした")
+}
+
+// ProcessChatWithContext は、チャットメッセージと事前の分析コンテキストを受け取り、AIで処理します。
+func (aos *AzureOpenAIService) ProcessChatWithContext(chatMessage string, context string) (string, error) {
+	// システムプロンプトを定義
+	systemPrompt := "あなたは、需要予測の専門家アシスタントです。ユーザーから提供された分析コンテキスト（ファイル概要、統計、データサンプル）と、追加の定性的な情報（経験や勘）を統合的に分析し、需要予測に関する質問に答えてください。"
+
+	// ユーザープロンプトを構築
+	userPrompt := fmt.Sprintf("以下の情報を考慮して、回答してください。\n\n## ユーザーからのメッセージ\n%s\n", chatMessage)
+
+	if context != "" {
+		userPrompt += fmt.Sprintf("\n## 事前分析コンテキスト\n%s\n", context)
+	}
+
+	messages := []ChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+
+	// Azure OpenAI にリクエストを送信
+	resp, err := aos.CreateChatCompletion(messages, 2000, 0.7)
+	if err != nil {
+		return "", fmt.Errorf("AI処理中にエラーが発生しました: %w", err)
 	}
 
 	if len(resp.Choices) > 0 {

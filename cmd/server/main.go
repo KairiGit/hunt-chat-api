@@ -8,6 +8,7 @@ import (
 	"hunt-chat-api/internal/handlers"
 	"hunt-chat-api/internal/services"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
@@ -27,12 +28,16 @@ func main() {
 	// Ginルーターの初期化
 	r := gin.Default()
 
+	// CORSミドルウェアの設定
+	r.Use(cors.Default())
+
 	// サービスの初期化
 	azureOpenAIService := services.NewAzureOpenAIService(
 		cfg.AzureOpenAIEndpoint,
 		cfg.AzureOpenAIAPIKey,
 		cfg.AzureOpenAIAPIVersion,
 		cfg.AzureOpenAIDeploymentName,
+		cfg.AzureOpenAIProxyURL,
 	)
 
 	// ハンドラーの初期化
@@ -106,6 +111,8 @@ func main() {
 			ai.POST("/predict-demand", aiHandler.PredictDemandWithAI)
 			ai.POST("/explain-forecast", aiHandler.ExplainForecast)
 			ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
+			ai.POST("/chat-input", aiHandler.ChatInput)
+			ai.POST("/analyze-file", aiHandler.AnalyzeFile)
 		}
 	}
 

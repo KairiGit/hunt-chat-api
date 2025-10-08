@@ -2,6 +2,8 @@
 
 This directory contains configuration files for the HUNT Chat-API development environment using VS Code Dev Containers.
 
+docker exec -it hunt-chat-api-dev /bin/bash 
+
 ## 🚀 Quick Start
 
 1. **Prerequisites**:
