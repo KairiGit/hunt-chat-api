@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"sort"
@@ -15,6 +17,7 @@ import (
 	"hunt-chat-api/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/qdrant/go-client/qdrant"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -23,14 +26,16 @@ type AIHandler struct {
 	azureOpenAIService    *services.AzureOpenAIService
 	weatherService        *services.WeatherService
 	demandForecastService *services.DemandForecastService
+	vectorStoreService    *services.VectorStoreService
 }
 
 // NewAIHandler 新しいAI統合ハンドラーを作成
-func NewAIHandler(azureOpenAIService *services.AzureOpenAIService, weatherService *services.WeatherService, demandForecastService *services.DemandForecastService) *AIHandler {
+func NewAIHandler(azureOpenAIService *services.AzureOpenAIService, weatherService *services.WeatherService, demandForecastService *services.DemandForecastService, vectorStoreService *services.VectorStoreService) *AIHandler {
 	return &AIHandler{
 		azureOpenAIService:    azureOpenAIService,
 		weatherService:        weatherService,
 		demandForecastService: demandForecastService,
+		vectorStoreService:    vectorStoreService,
 	}
 }
 
@@ -218,11 +223,63 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "チャットメッセージが必要です。"})
 		return
 	}
-	aiResponse, err := ah.azureOpenAIService.ProcessChatWithContext(req.ChatMessage, req.Context)
+
+	ctx := c.Request.Context()
+
+	// ユーザーメッセージをベクトルDBに非同期で保存
+	go func() {
+		userMetadata := map[string]interface{}{
+			"type":      "user_message",
+			"source":    "chat",
+			"timestamp": time.Now().Format(time.RFC3339),
+		}
+		if err := ah.vectorStoreService.Save(context.Background(), req.ChatMessage, userMetadata); err != nil {
+			log.Printf("ユーザーメッセージのDB保存に失敗: %v", err)
+		}
+	}()
+
+	// RAG: 類似した過去の会話を検索
+	var ragContext strings.Builder
+	if req.Context != "" {
+		ragContext.WriteString(req.Context) // ファイル分析のコンテキストを維持
+	}
+
+	searchResults, err := ah.vectorStoreService.Search(ctx, req.ChatMessage, 1)
 	if err != nil {
+		log.Printf("ベクトル検索に失敗: %v", err)
+		// 検索に失敗しても処理は続行
+	} else if len(searchResults) > 0 {
+		ragContext.WriteString("\n\n## 類似した過去の会話:\n")
+		for _, point := range searchResults {
+			// ペイロードから元のテキストを取得
+			if textPayload, ok := point.Payload["text"]; ok {
+				if text, ok := textPayload.GetKind().(*qdrant.Value_StringValue); ok {
+					ragContext.WriteString(fmt.Sprintf("- %s (類似度: %.2f)\n", text.StringValue, point.Score))
+				}
+			}
+		}
+	}
+
+	// AIに応答を生成させる
+	aiResponse, err := ah.azureOpenAIService.ProcessChatWithContext(req.ChatMessage, ragContext.String())
+	if err != nil {
+		log.Printf("AI処理エラー詳細: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI処理中にエラーが発生しました: " + err.Error()})
 		return
 	}
+
+	// AIの応答をベクトルDBに非同期で保存
+	go func() {
+		aiMetadata := map[string]interface{}{
+			"type":      "ai_response",
+			"source":    "chat",
+			"timestamp": time.Now().Format(time.RFC3339),
+		}
+		if err := ah.vectorStoreService.Save(context.Background(), aiResponse, aiMetadata); err != nil {
+			log.Printf("AI応答のDB保存に失敗: %v", err)
+		}
+	}()
+
 	c.JSON(http.StatusOK, gin.H{"success": true, "response": gin.H{"text": aiResponse}})
 }
 

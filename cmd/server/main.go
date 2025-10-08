@@ -36,14 +36,15 @@ func main() {
 		cfg.AzureOpenAIEndpoint,
 		cfg.AzureOpenAIAPIKey,
 		cfg.AzureOpenAIAPIVersion,
-		cfg.AzureOpenAIDeploymentName,
-		cfg.AzureOpenAIProxyURL,
+		cfg.AzureOpenAIChatDeploymentName,
+		cfg.AzureOpenAIEmbeddingDeploymentName,
 	)
+	vectorStoreService := services.NewVectorStoreService(azureOpenAIService)
 
 	// ハンドラーの初期化
 	weatherHandler := handlers.NewWeatherHandler()
 	demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
-	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), demandForecastHandler.GetDemandForecastService())
+	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), demandForecastHandler.GetDemandForecastService(), vectorStoreService)
 
 	// ヘルスチェックエンドポイント
 	r.GET("/health", func(c *gin.Context) {
