@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	config "hunt-chat-api/configs"
-	"hunt-chat-api/internal/handlers"
-	"hunt-chat-api/internal/services"
+	"hunt-chat-api/pkg/handlers"
+	"hunt-chat-api/pkg/services"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"

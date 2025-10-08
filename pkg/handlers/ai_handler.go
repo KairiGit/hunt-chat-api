@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"hunt-chat-api/internal/services"
+	"hunt-chat-api/pkg/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/qdrant/go-client/qdrant"

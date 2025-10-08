@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"hunt-chat-api/internal/models"
+	"hunt-chat-api/pkg/models"
 	"hunt-chat-api/pkg/azure"
 )
 

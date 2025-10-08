@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"hunt-chat-api/internal/services"
+	"hunt-chat-api/pkg/services"
 
 	"github.com/gin-gonic/gin"
 )

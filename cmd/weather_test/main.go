@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"hunt-chat-api/internal/services"
+	"hunt-chat-api/pkg/services"
 	"log"
 )
 

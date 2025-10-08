@@ -50,3 +50,6 @@ build-errors.log
 # Archives
 *.tar.gz
 .azure
+
+
+moc/

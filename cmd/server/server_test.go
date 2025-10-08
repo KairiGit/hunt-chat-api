@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"hunt-chat-api/configs"
-	"hunt-chat-api/internal/handlers"
-	"hunt-chat-api/internal/services"
+	"hunt-chat-api/pkg/handlers"
+	"hunt-chat-api/pkg/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
