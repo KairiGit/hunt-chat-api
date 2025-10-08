@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"hunt-chat-api/pkg/models"
 	"hunt-chat-api/pkg/azure"
+	"hunt-chat-api/pkg/models"
 )
 
 // AzureOpenAIService Azure OpenAI API サービス
