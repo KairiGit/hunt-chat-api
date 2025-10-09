@@ -2,7 +2,7 @@ package services
 
 import (
 	"fmt"
-	"hunt-chat-api/internal/models"
+	"hunt-chat-api/pkg/models"
 	"math"
 	"time"
 )

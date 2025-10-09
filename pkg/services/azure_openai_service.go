@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"hunt-chat-api/internal/models"
 	"hunt-chat-api/pkg/azure"
+	"hunt-chat-api/pkg/models"
 )
 
 // AzureOpenAIService Azure OpenAI API サービス
@@ -15,8 +15,8 @@ type AzureOpenAIService struct {
 }
 
 // NewAzureOpenAIService 新しいAzure OpenAI サービスを作成
-func NewAzureOpenAIService(endpoint, apiKey, apiVersion, deploymentName, proxyURL string) *AzureOpenAIService {
-	client := azure.NewOpenAIClient(endpoint, apiKey, apiVersion, deploymentName, proxyURL)
+func NewAzureOpenAIService(endpoint, apiKey, apiVersion, chatDeploymentName, embeddingDeploymentName string) *AzureOpenAIService {
+	client := azure.NewOpenAIClient(endpoint, apiKey, apiVersion, chatDeploymentName, embeddingDeploymentName, "") // proxyURLは不要になったため空文字列を渡す
 	return &AzureOpenAIService{
 		client: client,
 	}
@@ -194,4 +194,9 @@ func (aos *AzureOpenAIService) ProcessChatWithContext(chatMessage string, contex
 	}
 
 	return "", fmt.Errorf("AIから有効な回答が得られませんでした")
+}
+
+// CreateEmbedding はテキストのベクトル表現を生成します。
+func (aos *AzureOpenAIService) CreateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	return aos.client.CreateEmbedding(ctx, text)
 }

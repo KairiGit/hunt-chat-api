@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	config "hunt-chat-api/configs"
-	"hunt-chat-api/internal/handlers"
-	"hunt-chat-api/internal/services"
+	"hunt-chat-api/pkg/handlers"
+	"hunt-chat-api/pkg/services"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -36,14 +36,15 @@ func main() {
 		cfg.AzureOpenAIEndpoint,
 		cfg.AzureOpenAIAPIKey,
 		cfg.AzureOpenAIAPIVersion,
-		cfg.AzureOpenAIDeploymentName,
-		cfg.AzureOpenAIProxyURL,
+		cfg.AzureOpenAIChatDeploymentName,
+		cfg.AzureOpenAIEmbeddingDeploymentName,
 	)
+	vectorStoreService := services.NewVectorStoreService(azureOpenAIService, cfg.QdrantURL, cfg.QdrantAPIKey)
 
 	// ハンドラーの初期化
 	weatherHandler := handlers.NewWeatherHandler()
 	demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
-	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), demandForecastHandler.GetDemandForecastService())
+	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), demandForecastHandler.GetDemandForecastService(), vectorStoreService)
 
 	// ヘルスチェックエンドポイント
 	r.GET("/health", func(c *gin.Context) {

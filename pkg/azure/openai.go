@@ -6,34 +6,56 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
-// OpenAIClient Azure OpenAI REST API クライアント
+// OpenAIClient はAzure OpenAI REST APIへのリクエストを管理します。
+// このクライアントは、リクエストを実際のAzure OpenAIサービスに転送する
+// リバースプロキシをエンドポイントとして設定することを想定しています。
 type OpenAIClient struct {
-	endpoint   string
-	apiKey     string
-	apiVersion string
-	deployment string
-	proxyURL   string
-	httpClient *http.Client
+	endpoint                string
+	apiKey                  string
+	apiVersion              string
+	chatDeploymentName      string
+	embeddingDeploymentName string
+	httpClient              *http.Client
 }
 
-// NewOpenAIClient 新しいAzure OpenAI クライアントを作成
-func NewOpenAIClient(endpoint, apiKey, apiVersion, deployment, proxyURL string) *OpenAIClient {
+// NewOpenAIClient は新しいAzure OpenAIクライアントを作成します。
+// endpointには、Azure OpenAIの実際のエンドポイント、またはリクエストを転送するプロキシのURLを設定します。
+func NewOpenAIClient(endpoint, apiKey, apiVersion, chatDeploymentName, embeddingDeploymentName, proxyURL string) *OpenAIClient {
+	// 注意: このプロジェクトでは、HTTPクライアントのTransport層でのプロキシ設定は行いません。
+	// 代わりに、endpoint自体にプロキシのURLを指定する方式を採用しています。
+	// これは、使用しているプロキシの特殊な仕様に対応するためです。
+	transport := &http.Transport{}
+	if proxyURL != "" {
+		proxy, err := url.Parse(proxyURL)
+		if err == nil {
+			transport.Proxy = http.ProxyURL(proxy)
+			log.Println("HTTPクライアントにプロキシを設定しました:", proxyURL)
+		} else {
+			log.Printf("警告: 無効なプロキシURLです。プロキシは使用されません: %v", err)
+		}
+	}
+
 	return &OpenAIClient{
-		endpoint:   endpoint,
-		apiKey:     apiKey,
-		apiVersion: apiVersion,
-		deployment: deployment,
-		proxyURL:   proxyURL,
+		endpoint:                endpoint,
+		apiKey:                  apiKey,
+		apiVersion:              apiVersion,
+		chatDeploymentName:      chatDeploymentName,
+		embeddingDeploymentName: embeddingDeploymentName,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Transport: transport,
+			Timeout:   60 * time.Second,
 		},
 	}
 }
+
+// --- データ構造定義 ---
 
 // ChatMessage チャットメッセージ
 type ChatMessage struct {
@@ -62,14 +84,34 @@ type ChatCompletionResponse struct {
 		Message struct {
 			Role    string `json:"role"`
 			Content string `json:"content"`
-		} `json:"message"`
+		}
 		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
+	}
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
+	}
+}
+
+// EmbeddingRequest Embedding APIリクエスト
+type EmbeddingRequest struct {
+	Input string `json:"input"`
+}
+
+// EmbeddingResponse Embedding APIレスポンス
+type EmbeddingResponse struct {
+	Object string `json:"object"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Index     int       `json:"index"`
+		Embedding []float32 `json:"embedding"`
+	}
+	Model string `json:"model"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	}
 }
 
 // ErrorResponse エラーレスポンス
@@ -78,27 +120,17 @@ type ErrorResponse struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 		Type    string `json:"type"`
-	} `json:"error"`
+	}
 }
+
+// --- メソッド定義 ---
 
 // ChatCompletion チャット補完を実行
 func (c *OpenAIClient) ChatCompletion(ctx context.Context, messages []ChatMessage, maxTokens int, temperature float32, topP float32, stream bool) (*ChatCompletionResponse, error) {
-	if c.apiKey == "" {
-		return nil, fmt.Errorf("API key が設定されていません")
-	}
+	// リクエストURLをエンドポイントとデプロイ名から組み立てます。
+	url := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
+		strings.TrimSuffix(c.endpoint, "/"), c.chatDeploymentName, c.apiVersion)
 
-	// リクエストURLを決定
-	var url string
-	if c.proxyURL != "" {
-		// プロキシURLが設定されていれば、それを最優先で使用
-		url = c.proxyURL
-	} else {
-		// 通常のAzure OpenAI URLを組み立て
-		url = fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
-			strings.TrimSuffix(c.endpoint, "/"), c.deployment, c.apiVersion)
-	}
-
-	// リクエストボディの作成
 	request := ChatCompletionRequest{
 		Messages:    messages,
 		MaxTokens:   maxTokens,
@@ -107,56 +139,87 @@ func (c *OpenAIClient) ChatCompletion(ctx context.Context, messages []ChatMessag
 		Stream:      stream,
 	}
 
-	requestBody, err := json.Marshal(request)
+	var response ChatCompletionResponse
+	_, err := c.doRequest(ctx, url, request, &response)
+	if err != nil {
+		return nil, fmt.Errorf("Azure OpenAI API 呼び出しに失敗: %w", err)
+	}
+	return &response, nil
+}
+
+// CreateEmbedding テキストのベクトル表現を生成
+func (c *OpenAIClient) CreateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	if c.embeddingDeploymentName == "" {
+		return nil, fmt.Errorf("Embedding deployment name が設定されていません")
+	}
+
+	// リクエストURLをエンドポイントとデプロイ名から組み立てます。
+	url := fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s",
+		strings.TrimSuffix(c.endpoint, "/"), c.embeddingDeploymentName, c.apiVersion)
+
+	request := EmbeddingRequest{
+		Input: text,
+	}
+
+	var embeddingResp EmbeddingResponse
+	_, err := c.doRequest(ctx, url, request, &embeddingResp)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(embeddingResp.Data) == 0 || len(embeddingResp.Data[0].Embedding) == 0 {
+		return nil, fmt.Errorf("APIから有効なEmbeddingが返されませんでした")
+	}
+
+	return embeddingResp.Data[0].Embedding, nil
+}
+
+// doRequest はHTTPリクエストの実行と基本的なレスポンス処理を行う共通メソッドです。
+func (c *OpenAIClient) doRequest(ctx context.Context, url string, requestData interface{}, responseData interface{}) (interface{}, error) {
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("API key が設定されていません")
+	}
+
+	requestBody, err := json.Marshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("リクエストのJSON化に失敗: %w", err)
 	}
 
-	// HTTPリクエストの作成
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("HTTPリクエストの作成に失敗: %w", err)
 	}
 
-	// ヘッダーの設定
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("api-key", c.apiKey)
 
-	// デバッグ情報をログ出力
-	fmt.Printf("DEBUG: リクエストURL: %s\n", url)
-	fmt.Printf("DEBUG: APIキー: %s...\n", c.apiKey[:10])
-	fmt.Printf("DEBUG: リクエストボディ: %s\n", string(requestBody))
-
-	// リクエストの実行
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTPリクエストの実行に失敗: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// レスポンスの読み取り
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("レスポンスの読み取りに失敗: %w", err)
 	}
 
-	// エラーハンドリング
 	if resp.StatusCode != http.StatusOK {
 		var errorResp ErrorResponse
-		if err := json.Unmarshal(body, &errorResp); err == nil {
+		if err := json.Unmarshal(body, &errorResp); err == nil && errorResp.Error.Message != "" {
 			return nil, fmt.Errorf("Azure OpenAI API エラー (status: %d): %s", resp.StatusCode, errorResp.Error.Message)
 		}
 		return nil, fmt.Errorf("Azure OpenAI API エラー (status: %d): %s", resp.StatusCode, string(body))
 	}
 
-	// レスポンスのデコード
-	var chatResp ChatCompletionResponse
-	if err := json.Unmarshal(body, &chatResp); err != nil {
+	if err := json.Unmarshal(body, responseData); err != nil {
 		return nil, fmt.Errorf("レスポンスのJSON解析に失敗: %w", err)
 	}
 
-	return &chatResp, nil
+	return responseData, nil
 }
+
+// --- 以下、既存のヘルパー関数 (これらはCreateChatCompletionを呼び出すので変更不要) ---
 
 // AnalyzeWeatherData 気象データの分析
 func (c *OpenAIClient) AnalyzeWeatherData(ctx context.Context, weatherData string) (string, error) {

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"hunt-chat-api/internal/services"
+	"hunt-chat-api/pkg/services"
 
 	"github.com/gin-gonic/gin"
 )
