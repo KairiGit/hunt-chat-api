@@ -20,10 +20,10 @@ export async function POST(request: Request) {
       body: formData,
     });
 
-    return new NextResponse(response.body, {
+    const data = await response.json();
+
+    return NextResponse.json(data, {
       status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
     });
 
   } catch (error) {
