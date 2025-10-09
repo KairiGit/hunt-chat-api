@@ -36,7 +36,7 @@ export default function Home() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await fetch('/api/v1/demand/settings');
+        const response = await fetch('/api/proxy/demand/settings');
         if (!response.ok) throw new Error('Failed to fetch settings.');
         const result = await response.json();
         if (result.success) {
@@ -60,7 +60,7 @@ export default function Home() {
     setError(null);
     setForecastResult(null);
     try {
-      const response = await fetch('/api/v1/demand/forecast', {
+      const response = await fetch('/api/proxy/demand/forecast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ region_code: regionCode, product_category: productCategory, forecast_days: forecastDays }),
