@@ -39,7 +39,7 @@ func main() {
 		cfg.AzureOpenAIChatDeploymentName,
 		cfg.AzureOpenAIEmbeddingDeploymentName,
 	)
-	vectorStoreService := services.NewVectorStoreService(azureOpenAIService)
+	vectorStoreService := services.NewVectorStoreService(azureOpenAIService, cfg.QdrantURL, cfg.QdrantAPIKey)
 
 	// ハンドラーの初期化
 	weatherHandler := handlers.NewWeatherHandler()

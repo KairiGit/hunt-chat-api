@@ -49,7 +49,7 @@ func TestApplicationSetup(t *testing.T) {
 	// 実際の接続をテストするにはインテグレーションテストが必要。
 	// ここではコンパイルを通すため、呼び出しのみ行う。
 	// 注意: このテストを実行する際は、Qdrantコンテナが起動している必要があります。
-	vectorStoreService := services.NewVectorStoreService(azureOpenAIService)
+	vectorStoreService := services.NewVectorStoreService(azureOpenAIService, "", "")
 	assert.NotNil(t, vectorStoreService, "VectorStoreService should not be nil")
 
 	// ハンドラーの初期化テスト

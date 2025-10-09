@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"time"
@@ -9,7 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/qdrant/go-client/qdrant"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 // VectorStoreService はQdrantとのやり取りを管理します
@@ -19,9 +22,32 @@ type VectorStoreService struct {
 }
 
 // NewVectorStoreService は新しいVectorStoreServiceを初期化して返します
-func NewVectorStoreService(azureOpenAIService *AzureOpenAIService) *VectorStoreService {
-	// Qdrantへの接続を確立 (gRPC)
-	conn, err := grpc.NewClient("localhost:6334", grpc.WithTransportCredentials(insecure.NewCredentials()))
+func NewVectorStoreService(azureOpenAIService *AzureOpenAIService, qdrantURL string, qdrantAPIKey string) *VectorStoreService {
+	// 接続オプション
+	var dialOpts []grpc.DialOption
+
+	// APIキーの有無で、Cloud接続(TLS+APIキー)とローカル接続(非セキュア)を切り替える
+	if qdrantAPIKey != "" {
+		// --- Qdrant Cloud用の接続 --- //
+		log.Println("Qdrant Cloud (TLS) への接続を準備します...")
+		creds := credentials.NewTLS(&tls.Config{})
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
+
+		// APIキー認証インターセプタを追加
+		authInterceptor := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			ctx = metadata.AppendToOutgoingContext(ctx, "api-key", qdrantAPIKey)
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
+		dialOpts = append(dialOpts, grpc.WithUnaryInterceptor(authInterceptor))
+
+	} else {
+		// --- ローカル用の接続 (以前成功した方式) --- //
+		log.Println("ローカルのQdrant (非TLS) への接続を準備します...")
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	// gRPC接続を確立
+	conn, err := grpc.NewClient(qdrantURL, dialOpts...)
 	if err != nil {
 		log.Fatalf("QdrantへのgRPCクライアント作成に失敗しました: %v", err)
 	}
@@ -40,10 +66,11 @@ func NewVectorStoreService(azureOpenAIService *AzureOpenAIService) *VectorStoreS
 
 	log.Println("Qdrantサーバーの準備を確認中...")
 	for i := 0; i < maxRetries; i++ {
-		res, err := qdrantCollectionsClient.List(context.Background(), &qdrant.ListCollectionsRequest{})
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		res, err := qdrantCollectionsClient.List(ctx, &qdrant.ListCollectionsRequest{})
+		cancel()
 		listErr = err
 		if err == nil {
-			// 成功
 			log.Println("Qdrantサーバーの準備ができました。")
 			for _, collection := range res.GetCollections() {
 				if collection.GetName() == collectionName {
@@ -51,7 +78,7 @@ func NewVectorStoreService(azureOpenAIService *AzureOpenAIService) *VectorStoreS
 					break
 				}
 			}
-			break // ループを抜ける
+			break // 成功したのでループを抜ける
 		}
 		log.Printf("Qdrantサーバーの準備確認に失敗しました (試行 %d/%d)。%v後に再試行します...", i+1, maxRetries, retryInterval)
 		time.Sleep(retryInterval)
@@ -64,7 +91,9 @@ func NewVectorStoreService(azureOpenAIService *AzureOpenAIService) *VectorStoreS
 	// コレクションが存在しない場合は作成
 	if !collectionExists {
 		log.Printf("コレクション '%s' が存在しないため、新規作成します。", collectionName)
-		_, err = qdrantCollectionsClient.Create(context.Background(), &qdrant.CreateCollection{
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err = qdrantCollectionsClient.Create(ctx, &qdrant.CreateCollection{
 			CollectionName: collectionName,
 			VectorsConfig: &qdrant.VectorsConfig{
 				Config: &qdrant.VectorsConfig_Params{

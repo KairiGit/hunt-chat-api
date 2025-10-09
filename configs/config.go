@@ -15,6 +15,8 @@ type Config struct {
 	AzureOpenAIEmbeddingDeploymentName string
 	Environment                        string
 	OpenWeatherMapAPIKey               string
+	QdrantURL                          string
+	QdrantAPIKey                       string
 }
 
 // LoadConfig loads configuration from environment variables
@@ -29,6 +31,8 @@ func LoadConfig() *Config {
 		AzureOpenAIEmbeddingDeploymentName: getEnv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME", "text-embedding-3-small"),
 		Environment:                        getEnv("ENVIRONMENT", "development"),
 		OpenWeatherMapAPIKey:               getEnv("OPENWEATHERMAP_API_KEY", ""),
+		QdrantURL:                          getEnv("QDRANT_URL", "127.0.0.1:6334"),
+		QdrantAPIKey:                       getEnv("QDRANT_API_KEY", ""),
 	}
 }
 
