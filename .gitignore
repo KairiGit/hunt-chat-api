@@ -1,55 +1,41 @@
-# Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Test binary, built with `go test -c`
-*.test
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Output of the go coverage tool
-*.out
+# testing
+/coverage
 
-# Dependency directories (remove the comment below to include it)
-vendor/
+# next.js
+/.next/
+/out/
 
-# Go workspace file
-go.work
+# production
+/build
 
-# IDE files
-.vscode/
-.idea/
-
-# Environment files
-.env
-.env.local
-
-# Logs
-*.log
-
-# OS generated files
+# misc
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+*.pem
 
-# Azure deployment files
-.azure/
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# DevContainer files
-.devcontainer/setup.log
-.air.toml
-tmp/
-bin/
-build-errors.log
+# env files (can opt-in for committing if needed)
+.env*
 
-# Archives
-*.tar.gz
-.azure
+# vercel
+.vercel
 
-
-moc/
+# typescript
+*.tsbuildinfo
+next-env.d.ts

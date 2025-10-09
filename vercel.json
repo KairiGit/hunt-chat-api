@@ -6,7 +6,7 @@
       "use": "@vercel/go"
     },
     {
-      "src": "next/package.json",
+      "src": "package.json",
       "use": "@vercel/next"
     }
   ],

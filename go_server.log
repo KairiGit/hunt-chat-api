@@ -1,0 +1,49 @@
+2025/10/02 04:48:55 DEBUG: Loaded AZURE_OPENAI_API_KEY (first 10 chars): ...
+2025/10/02 04:48:55 DEBUG: Loaded AZURE_OPENAI_ENDPOINT: https://your-openai-resource.openai.azure.com/
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /health                   --> main.main.func1 (3 handlers)
+[GIN-debug] GET    /api/v1/hello             --> main.main.func2 (3 handlers)
+[GIN-debug] GET    /api/v1/weather/test      --> hunt-chat-api/internal/handlers.(*WeatherHandler).TestWeatherAPI-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/regions   --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetRegionCodes-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/forecast/:regionCode --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetForecastData-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/forecast  --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetForecastData-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/tokyo     --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetTokyoWeatherData-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/region/:regionCode --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetWeatherByRegion-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/historical/:regionCode --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetHistoricalWeatherData-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/historical --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetHistoricalWeatherData-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/historical/:regionCode/date --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetHistoricalWeatherDataByDate-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/historical/:regionCode/range --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetHistoricalWeatherDataRange-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/historical-range --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetAvailableHistoricalDataRange-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/suzuka/monthly --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetSuzukaMonthlyWeatherSummary-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/analysis/:regionCode --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetWeatherDataAnalysis-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/analysis  --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetWeatherDataAnalysis-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/trends/:regionCode --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetWeatherTrendAnalysis-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/trends    --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetWeatherTrendAnalysis-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/category/:regionCode --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetWeatherDataByCategory-fm (3 handlers)
+[GIN-debug] GET    /api/v1/weather/category  --> hunt-chat-api/internal/handlers.(*WeatherHandler).GetWeatherDataByCategory-fm (3 handlers)
+[GIN-debug] POST   /api/v1/demand/forecast   --> hunt-chat-api/internal/handlers.(*DemandForecastHandler).PredictDemand-fm (3 handlers)
+[GIN-debug] GET    /api/v1/demand/forecast/suzuka --> hunt-chat-api/internal/handlers.(*DemandForecastHandler).GetDemandForecastForSuzuka-fm (3 handlers)
+[GIN-debug] GET    /api/v1/demand/settings   --> hunt-chat-api/internal/handlers.(*DemandForecastHandler).GetDemandForecastSettings-fm (3 handlers)
+[GIN-debug] GET    /api/v1/demand/insights/:regionCode --> hunt-chat-api/internal/handlers.(*DemandForecastHandler).GetDemandInsights-fm (3 handlers)
+[GIN-debug] GET    /api/v1/demand/insights   --> hunt-chat-api/internal/handlers.(*DemandForecastHandler).GetDemandInsights-fm (3 handlers)
+[GIN-debug] GET    /api/v1/demand/analytics/:regionCode --> hunt-chat-api/internal/handlers.(*DemandForecastHandler).GetDemandAnalytics-fm (3 handlers)
+[GIN-debug] GET    /api/v1/demand/analytics  --> hunt-chat-api/internal/handlers.(*DemandForecastHandler).GetDemandAnalytics-fm (3 handlers)
+[GIN-debug] GET    /api/v1/demand/anomalies  --> hunt-chat-api/internal/handlers.(*DemandForecastHandler).DetectAnomalies-fm (3 handlers)
+[GIN-debug] GET    /api/v1/ai/capabilities   --> hunt-chat-api/internal/handlers.(*AIHandler).GetAICapabilities-fm (3 handlers)
+[GIN-debug] POST   /api/v1/ai/analyze-weather --> hunt-chat-api/internal/handlers.(*AIHandler).AnalyzeWeatherData-fm (3 handlers)
+[GIN-debug] POST   /api/v1/ai/demand-insights --> hunt-chat-api/internal/handlers.(*AIHandler).GenerateDemandInsights-fm (3 handlers)
+[GIN-debug] POST   /api/v1/ai/predict-demand --> hunt-chat-api/internal/handlers.(*AIHandler).PredictDemandWithAI-fm (3 handlers)
+[GIN-debug] POST   /api/v1/ai/explain-forecast --> hunt-chat-api/internal/handlers.(*AIHandler).ExplainForecast-fm (3 handlers)
+[GIN-debug] GET    /api/v1/ai/generate-question --> hunt-chat-api/internal/handlers.(*AIHandler).GenerateAnomalyQuestion-fm (3 handlers)
+2025/10/02 04:48:55 Starting HUNT Chat-API server on :8080
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8080
+[GIN-debug] [ERROR] listen tcp :8080: bind: address already in use
+2025/10/02 04:48:55 Failed to start server:listen tcp :8080: bind: address already in use
+exit status 1
