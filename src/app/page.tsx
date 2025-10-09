@@ -88,7 +88,7 @@ export default function Home() {
     formData.append('file', selectedFileForAnalysis);
 
     try {
-      const response = await fetch('/api/analyze-file', { method: 'POST', body: formData });
+      const response = await fetch('/api/v1/ai/analyze-file', { method: 'POST', body: formData });
       if (!response.ok) {
         const errData = await response.json();
         let detailedError = errData.error || `File analysis failed: ${response.statusText}`;

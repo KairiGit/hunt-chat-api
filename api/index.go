@@ -53,7 +53,7 @@ func setupApp() *gin.Engine {
 		})
 
 		// APIルートの定義
-		v1 := r.Group("/v1")
+		v1 := r.Group("/api/v1")
 		{
 			v1.GET("/hello", func(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"message": "Hello from Vercel!"})
