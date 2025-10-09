@@ -36,7 +36,7 @@ export default function Home() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await fetch('/api/demand-forecast');
+        const response = await fetch('/api/v1/demand/settings');
         if (!response.ok) throw new Error('Failed to fetch settings.');
         const result = await response.json();
         if (result.success) {
@@ -60,7 +60,7 @@ export default function Home() {
     setError(null);
     setForecastResult(null);
     try {
-      const response = await fetch('/api/demand-forecast', {
+      const response = await fetch('/api/v1/demand/forecast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ region_code: regionCode, product_category: productCategory, forecast_days: forecastDays }),
@@ -112,37 +112,68 @@ export default function Home() {
 
   const handleChatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || chatLoading) return;
 
     const userMessage: ChatMessage = { sender: 'user', text: chatInput };
-    setChatMessages((prev) => [...prev, userMessage]);
+    // ユーザーのメッセージと、AIの返信用の空のメッセージを先に追加
+    setChatMessages((prev) => [...prev, userMessage, { sender: 'ai', text: '' }]);
     setChatLoading(true);
     setError(null);
+    setChatInput(''); // 入力欄をクリア
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/v1/ai/chat-input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_message: chatInput, context: analysisSummary }),
       });
+
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || `Chat submission failed: ${response.statusText}`);
+        const errData = await response.json().catch(() => ({ error: `Chat submission failed: ${response.statusText}` }));
+        throw new Error(errData.error);
       }
-      const result = await response.json();
-      if (result.success) {
-        const aiMessage: ChatMessage = { sender: 'ai', text: result.response.text };
-        setChatMessages((prev) => [...prev, aiMessage]);
-      } else {
-        throw new Error(result.error || 'Failed to get chat response.');
+
+      // ストリーミング処理
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Failed to get response reader');
       }
+      const decoder = new TextDecoder();
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        
+        // 最後のメッセージ(AIの返信)にテキストを追記していく
+        setChatMessages((prevMessages) => {
+          const lastMessage = prevMessages[prevMessages.length - 1];
+          if (lastMessage && lastMessage.sender === 'ai') {
+            const updatedLastMessage = {
+              ...lastMessage,
+              text: lastMessage.text + chunk,
+            };
+            return [...prevMessages.slice(0, -1), updatedLastMessage];
+          }
+          // このパスは通常通らないはず
+          return [...prevMessages, { sender: 'ai', text: chunk }];
+        });
+      }
+
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred';
-      const aiErrorMessage: ChatMessage = { sender: 'ai', text: `エラー: ${errorMessage}` };
-      setChatMessages((prev) => [...prev, aiErrorMessage]);
+      setChatMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        // エラーメッセージでAIの返信を更新
+        if (lastMessage && lastMessage.sender === 'ai' && lastMessage.text === '') {
+          return [...prev.slice(0, -1), { sender: 'ai', text: `エラー: ${errorMessage}` }];
+        }
+        return [...prev, { sender: 'ai', text: `エラー: ${errorMessage}` }];
+      });
     } finally {
       setChatLoading(false);
-      setChatInput('');
     }
   };
 
