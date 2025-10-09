@@ -2,40 +2,28 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: Request) {
+export async function GET(request: Request) {
   let targetUrl = '';
   try {
-    const requestBody = await request.json();
-
     const baseUrl = process.env.GO_BACKEND_URL || `https://${process.env.VERCEL_URL}`;
-    targetUrl = `${baseUrl}/api/v1/ai/chat-input`;
+    targetUrl = `${baseUrl}/api/v1/demand/settings`;
 
     const headers = new Headers();
-    headers.append('Content-Type', 'application/json');
     headers.append('X-API-KEY', process.env.API_KEY || '');
 
     const response = await fetch(targetUrl, {
-      method: 'POST',
+      method: 'GET',
       headers: headers,
-      body: JSON.stringify(requestBody),
     });
 
-    if (response.body) {
-      return new NextResponse(response.body, {
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-        },
-      });
-    }
+    const data = await response.json();
 
-    return new NextResponse(response.body, {
+    return NextResponse.json(data, {
       status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
     });
 
   } catch (error) {
-    console.error('Proxy error in /api/proxy/chat-input:', error);
+    console.error('Proxy error in /api/proxy/demand/settings:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
       {
