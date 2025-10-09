@@ -88,7 +88,7 @@ export default function Home() {
     formData.append('file', selectedFileForAnalysis);
 
     try {
-      const response = await fetch('/api/v1/ai/analyze-file', { method: 'POST', body: formData });
+      const response = await fetch('/api/proxy/analyze-file', { method: 'POST', body: formData });
       if (!response.ok) {
         const errData = await response.json();
         let detailedError = errData.error || `File analysis failed: ${response.statusText}`;
@@ -122,7 +122,7 @@ export default function Home() {
     setChatInput(''); // 入力欄をクリア
 
     try {
-      const response = await fetch('/api/v1/ai/chat-input', {
+      const response = await fetch('/api/proxy/chat-input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_message: chatInput, context: analysisSummary }),
