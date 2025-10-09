@@ -3,9 +3,10 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  let targetUrl = '';
   try {
-    const baseUrl = process.env.GO_BACKEND_URL || '';
-    const targetUrl = `${baseUrl}/api/v1/demand/settings`;
+    const baseUrl = process.env.GO_BACKEND_URL || `https://${process.env.VERCEL_URL}`;
+    targetUrl = `${baseUrl}/api/v1/demand/settings`;
 
     const headers = new Headers();
     headers.append('X-API-KEY', process.env.API_KEY || '');
@@ -23,8 +24,13 @@ export async function GET(request: Request) {
 
   } catch (error) {
     console.error('Proxy error in /api/proxy/demand/settings:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'An internal server error occurred in the proxy.' },
+      {
+        error: 'An internal server error occurred in the proxy.',
+        details: `Failed to fetch target: ${targetUrl}`,
+        proxyError: errorMessage,
+      },
       { status: 500 }
     );
   }
