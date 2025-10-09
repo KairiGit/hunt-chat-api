@@ -46,6 +46,24 @@ func main() {
 	demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
 	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), demandForecastHandler.GetDemandForecastService(), vectorStoreService)
 
+	// 認証ミドルウェア
+	authMiddleware := func(apiKey string) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			// APIキーがデフォルト値の場合は認証をスキップ（ローカル開発を容易にするため）
+			if apiKey == "" || apiKey == "default_secret_key" {
+				c.Next()
+				return
+			}
+
+			providedKey := c.GetHeader("X-API-KEY")
+			if providedKey != apiKey {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+				return
+			}
+			c.Next()
+		}
+	}
+
 	// ヘルスチェックエンドポイント
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -56,6 +74,7 @@ func main() {
 
 	// APIバージョン1のルートグループ
 	v1 := r.Group("/api/v1")
+	v1.Use(authMiddleware(cfg.APIKey)) // ミドルウェアをグループに適用
 	{
 		v1.GET("/hello", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{

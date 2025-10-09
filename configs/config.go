@@ -17,6 +17,7 @@ type Config struct {
 	OpenWeatherMapAPIKey               string
 	QdrantURL                          string
 	QdrantAPIKey                       string
+	APIKey                             string
 }
 
 // LoadConfig loads configuration from environment variables
@@ -33,6 +34,7 @@ func LoadConfig() *Config {
 		OpenWeatherMapAPIKey:               getEnv("OPENWEATHERMAP_API_KEY", ""),
 		QdrantURL:                          getEnv("QDRANT_URL", "127.0.0.1:6334"),
 		QdrantAPIKey:                       getEnv("QDRANT_API_KEY", ""),
+		APIKey:                             getEnv("API_KEY", "default_secret_key"), // 開発用のデフォルトキー
 	}
 }
 
