@@ -41,6 +41,9 @@ export default function RootLayout({
                 <Link href="/" className="px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
                   ホーム
                 </Link>
+                <Link href="/dashboard" className="px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
+                  📊 ダッシュボード
+                </Link>
                 <Link href="/analysis" className="px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
                   ファイル分析
                 </Link>

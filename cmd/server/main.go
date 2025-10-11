@@ -133,6 +133,8 @@ func main() {
 			ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
 			ai.POST("/chat-input", aiHandler.ChatInput)
 			ai.POST("/analyze-file", aiHandler.AnalyzeFile)
+			ai.POST("/predict-sales", aiHandler.PredictSales)        // 売上予測API
+			ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales) // 異常検知API
 		}
 	}
 

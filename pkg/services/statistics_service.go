@@ -100,6 +100,33 @@ func (s *StatisticsService) InterpretCorrelation(r float64, pValue float64) stri
 	return fmt.Sprintf("%s%s相関 %s", strength, direction, significance)
 }
 
+// calculateMean 平均値を計算
+func (s *StatisticsService) calculateMean(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, v := range values {
+		sum += v
+	}
+	return sum / float64(len(values))
+}
+
+// calculateStandardDeviation 標準偏差を計算
+func (s *StatisticsService) calculateStandardDeviation(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	mean := s.calculateMean(values)
+	sumSquaredDiff := 0.0
+	for _, v := range values {
+		diff := v - mean
+		sumSquaredDiff += diff * diff
+	}
+	variance := sumSquaredDiff / float64(len(values))
+	return math.Sqrt(variance)
+}
+
 // AnalyzeSalesWeatherCorrelation 販売データと気象データの相関を分析
 func (s *StatisticsService) AnalyzeSalesWeatherCorrelation(
 	salesData []models.WeatherSalesData,
@@ -455,4 +482,162 @@ func (s *StatisticsService) generateRecommendations(
 	}
 
 	return recommendations
+}
+
+// PredictFutureSales 将来の売上を予測する
+func (s *StatisticsService) PredictFutureSales(
+	historicalSales []float64,
+	historicalTemperatures []float64,
+	futureTemperature float64,
+	confidenceLevel float64,
+) (models.SalesPrediction, error) {
+	if len(historicalSales) != len(historicalTemperatures) {
+		return models.SalesPrediction{}, fmt.Errorf("データ系列の長さが一致しません")
+	}
+
+	if len(historicalSales) < 10 {
+		return models.SalesPrediction{}, fmt.Errorf("予測には最低10件のデータが必要です")
+	}
+
+	// 1. 回帰分析で予測値を計算
+	regression, err := s.PerformLinearRegression(historicalTemperatures, historicalSales)
+	if err != nil {
+		return models.SalesPrediction{}, err
+	}
+
+	predictedValue := regression.Slope*futureTemperature + regression.Intercept
+
+	// 2. 残差の標準偏差を計算（予測の不確実性）
+	var residuals []float64
+	for i := 0; i < len(historicalSales); i++ {
+		predicted := regression.Slope*historicalTemperatures[i] + regression.Intercept
+		residual := historicalSales[i] - predicted
+		residuals = append(residuals, residual)
+	}
+
+	residualStdDev := s.calculateStandardDeviation(residuals)
+
+	// 3. 信頼区間を計算（デフォルト95%）
+	if confidenceLevel == 0 {
+		confidenceLevel = 0.95
+	}
+
+	// z値（正規分布）: 90%=1.645, 95%=1.96, 99%=2.576
+	var zScore float64
+	switch confidenceLevel {
+	case 0.90:
+		zScore = 1.645
+	case 0.95:
+		zScore = 1.96
+	case 0.99:
+		zScore = 2.576
+	default:
+		zScore = 1.96 // デフォルト95%
+	}
+
+	margin := zScore * residualStdDev
+	lowerBound := predictedValue - margin
+	upperBound := predictedValue + margin
+
+	// 4. 予測の信頼度を計算（R²値ベース）
+	confidence := regression.RSquared
+
+	// 5. 予測根拠を生成
+	factors := []string{
+		fmt.Sprintf("気温 %.1f°C に基づく回帰予測", futureTemperature),
+		fmt.Sprintf("過去 %d 件のデータから学習", len(historicalSales)),
+		fmt.Sprintf("決定係数 R² = %.3f", regression.RSquared),
+	}
+
+	if regression.RSquared > 0.5 {
+		factors = append(factors, "気温と売上の相関が強いため、予測精度は高いです")
+	} else if regression.RSquared > 0.3 {
+		factors = append(factors, "気温と売上に相関がありますが、他の要因も考慮が必要です")
+	} else {
+		factors = append(factors, "気温以外の要因が売上に大きく影響している可能性があります")
+	}
+
+	return models.SalesPrediction{
+		PredictedValue: predictedValue,
+		ConfidenceInterval: models.ConfidenceInterval{
+			Lower:      lowerBound,
+			Upper:      upperBound,
+			Confidence: confidenceLevel,
+		},
+		Confidence:       confidence,
+		PredictionFactors: factors,
+		RegressionEquation: fmt.Sprintf("y = %.2fx + %.2f", regression.Slope, regression.Intercept),
+	}, nil
+}
+
+// DetectAnomalies 売上データから異常値を検出する（3σ法）
+func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string) []models.AnomalyDetection {
+	if len(sales) != len(dates) || len(sales) < 10 {
+		return nil
+	}
+
+	mean := s.calculateMean(sales)
+	stdDev := s.calculateStandardDeviation(sales)
+
+	var anomalies []models.AnomalyDetection
+	threshold := 3.0 * stdDev // 3σ
+
+	for i, value := range sales {
+		deviation := math.Abs(value - mean)
+		if deviation > threshold {
+			anomalyType := "急増"
+			if value < mean {
+				anomalyType = "急減"
+			}
+
+			zScore := (value - mean) / stdDev
+
+			anomalies = append(anomalies, models.AnomalyDetection{
+				Date:          dates[i],
+				ActualValue:   value,
+				ExpectedValue: mean,
+				Deviation:     deviation,
+				ZScore:        zScore,
+				AnomalyType:   anomalyType,
+				Severity:      s.calculateSeverity(math.Abs(zScore)),
+			})
+		}
+	}
+
+	return anomalies
+}
+
+// calculateSeverity 異常の深刻度を計算
+func (s *StatisticsService) calculateSeverity(absZScore float64) string {
+	if absZScore > 4.0 {
+		return "critical" // 極めて異常
+	} else if absZScore > 3.5 {
+		return "high" // 高度な異常
+	} else if absZScore > 3.0 {
+		return "medium" // 中程度の異常
+	}
+	return "low"
+}
+
+// GenerateAIQuestion 異常値に基づいてAIが質問を生成
+func (s *StatisticsService) GenerateAIQuestion(anomaly models.AnomalyDetection) string {
+	if anomaly.AnomalyType == "急増" {
+		return fmt.Sprintf(
+			"📈 %s に売上が通常より %.0f 増加しました（期待値: %.0f → 実績: %.0f）。\n"+
+				"この日に特別なイベント、キャンペーン、または外的要因はありましたか？",
+			anomaly.Date,
+			anomaly.Deviation,
+			anomaly.ExpectedValue,
+			anomaly.ActualValue,
+		)
+	} else {
+		return fmt.Sprintf(
+			"📉 %s に売上が通常より %.0f 減少しました（期待値: %.0f → 実績: %.0f）。\n"+
+				"この日に売上減少の原因となった要因（天候、競合、在庫切れなど）はありましたか？",
+			anomaly.Date,
+			anomaly.Deviation,
+			anomaly.ExpectedValue,
+			anomaly.ActualValue,
+		)
+	}
 }

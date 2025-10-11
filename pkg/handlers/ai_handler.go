@@ -669,3 +669,86 @@ func (ah *AIHandler) GenerateAnomalyQuestion(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "異常を検知し、質問を生成しました。", "question": question, "source_anomaly": targetAnomaly})
 }
+
+// PredictSales 将来の売上を予測する
+func (ah *AIHandler) PredictSales(c *gin.Context) {
+	var req models.PredictionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "リクエストパラメータが不正です: " + err.Error(),
+		})
+		return
+	}
+
+	// デフォルト値設定
+	if req.ConfidenceLevel == 0 {
+		req.ConfidenceLevel = 0.95
+	}
+
+	// 過去データの取得（簡易版：ファイルから取得する代わりにサンプルデータを使用）
+	// 実際の実装では、Qdrantや外部DBから過去データを取得する
+	historicalSales := []float64{100, 110, 105, 120, 115, 130, 125, 140, 135, 150, 145, 160}
+	historicalTemperatures := []float64{15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26}
+
+	prediction, err := ah.statisticsService.PredictFutureSales(
+		historicalSales,
+		historicalTemperatures,
+		req.FutureTemperature,
+		req.ConfidenceLevel,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "予測の計算に失敗しました: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.PredictionResponse{
+		Success:    true,
+		Prediction: prediction,
+		Message:    fmt.Sprintf("製品 %s の売上予測が完了しました", req.ProductID),
+	})
+}
+
+// DetectAnomaliesInSales 売上データから異常値を検出する
+func (ah *AIHandler) DetectAnomaliesInSales(c *gin.Context) {
+	// サンプルデータ（実際の実装ではリクエストボディから取得）
+	type AnomalyRequest struct {
+		Sales []float64 `json:"sales" binding:"required"`
+		Dates []string  `json:"dates" binding:"required"`
+	}
+
+	var req AnomalyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "リクエストパラメータが不正です: " + err.Error(),
+		})
+		return
+	}
+
+	if len(req.Sales) != len(req.Dates) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "売上データと日付データの長さが一致しません",
+		})
+		return
+	}
+
+	// 異常検知を実行
+	anomalies := ah.statisticsService.DetectAnomalies(req.Sales, req.Dates)
+
+	// 各異常に対してAIが質問を生成
+	for i := range anomalies {
+		anomalies[i].AIQuestion = ah.statisticsService.GenerateAIQuestion(anomalies[i])
+	}
+
+	c.JSON(http.StatusOK, models.AnomalyDetectionResponse{
+		Success:   true,
+		Anomalies: anomalies,
+		Message:   fmt.Sprintf("%d 件の異常を検出しました", len(anomalies)),
+	})
+}
