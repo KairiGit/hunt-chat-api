@@ -205,3 +205,70 @@ func (s *VectorStoreService) Search(ctx context.Context, queryText string, topK 
 	log.Printf("'%s' に類似した %d 件の結果をQdrantから取得しました。", queryText, len(searchResult.GetResult()))
 	return searchResult.GetResult(), nil
 }
+
+// SaveAnalysisReport 分析レポートを構造化してQdrantに保存
+func (s *VectorStoreService) SaveAnalysisReport(ctx context.Context, report interface{}, reportType string) error {
+	// レポートをJSON文字列に変換
+	var reportText string
+	switch r := report.(type) {
+	case string:
+		reportText = r
+	default:
+		// 構造体の場合はフォーマットして保存
+		reportText = fmt.Sprintf("%+v", r)
+	}
+
+	metadata := map[string]interface{}{
+		"type":        "analysis_report",
+		"report_type": reportType,
+		"timestamp":   time.Now().Format(time.RFC3339),
+		"source":      "statistical_analysis",
+	}
+
+	return s.Save(ctx, reportText, metadata)
+}
+
+// SearchAnalysisReports 分析レポートを検索（typeフィルタ付き）
+func (s *VectorStoreService) SearchAnalysisReports(ctx context.Context, query string, topK uint64) ([]*qdrant.ScoredPoint, error) {
+	// クエリテキストをベクトル化
+	queryVector, err := s.azureOpenAIService.CreateEmbedding(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("クエリテキストのベクトル化に失敗: %w", err)
+	}
+
+	// typeフィルタを追加
+	collectionName := "hunt_chat_documents"
+	withPayload := true
+
+	// Qdrantのフィルタ条件を構築
+	filter := &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			{
+				ConditionOneOf: &qdrant.Condition_Field{
+					Field: &qdrant.FieldCondition{
+						Key: "type",
+						Match: &qdrant.Match{
+							MatchValue: &qdrant.Match_Keyword{
+								Keyword: "analysis_report",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	searchResult, err := s.qdrantClient.Search(ctx, &qdrant.SearchPoints{
+		CollectionName: collectionName,
+		Vector:         queryVector,
+		Limit:          topK,
+		Filter:         filter,
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("分析レポートの検索に失敗: %w", err)
+	}
+
+	log.Printf("分析レポート検索: '%s' に類似した %d 件を取得", query, len(searchResult.GetResult()))
+	return searchResult.GetResult(), nil
+}

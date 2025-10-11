@@ -58,3 +58,47 @@ type Anomaly struct {
 	Weather     string  `json:"weather,omitempty"`
 	Temperature float64 `json:"temperature,omitempty"`
 }
+
+// CorrelationResult represents the result of correlation analysis
+type CorrelationResult struct {
+	Factor          string  `json:"factor"`           // e.g., "temperature", "humidity"
+	CorrelationCoef float64 `json:"correlation_coef"` // Pearson correlation coefficient (-1 to 1)
+	PValue          float64 `json:"p_value"`          // Statistical significance
+	SampleSize      int     `json:"sample_size"`      // Number of data points used
+	Interpretation  string  `json:"interpretation"`   // Human-readable interpretation
+}
+
+// RegressionResult represents the result of regression analysis
+type RegressionResult struct {
+	Slope       float64 `json:"slope"`        // Regression slope
+	Intercept   float64 `json:"intercept"`    // Regression intercept
+	RSquared    float64 `json:"r_squared"`    // R² (coefficient of determination)
+	Prediction  float64 `json:"prediction"`   // Predicted value
+	Confidence  float64 `json:"confidence"`   // Confidence level
+	Description string  `json:"description"`  // Description of the result
+}
+
+// AnalysisReport represents a comprehensive analysis report
+type AnalysisReport struct {
+	ReportID        string              `json:"report_id"`
+	FileName        string              `json:"file_name"`
+	AnalysisDate    string              `json:"analysis_date"`
+	DataPoints      int                 `json:"data_points"`
+	DateRange       string              `json:"date_range"`
+	WeatherMatches  int                 `json:"weather_matches"`
+	Summary         string              `json:"summary"`
+	Correlations    []CorrelationResult `json:"correlations"`
+	Regression      *RegressionResult   `json:"regression,omitempty"`
+	AIInsights      string              `json:"ai_insights"`
+	Recommendations []string            `json:"recommendations"`
+}
+
+// WeatherSalesData represents a single data point combining weather and sales
+type WeatherSalesData struct {
+	Date        string  `json:"date"`
+	ProductID   string  `json:"product_id"`
+	Sales       float64 `json:"sales"`
+	Temperature float64 `json:"temperature"`
+	Humidity    float64 `json:"humidity"`
+	Weather     string  `json:"weather"`
+}

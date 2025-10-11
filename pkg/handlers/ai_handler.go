@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"hunt-chat-api/pkg/models"
 	"hunt-chat-api/pkg/services"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,7 @@ type AIHandler struct {
 	weatherService        *services.WeatherService
 	demandForecastService *services.DemandForecastService
 	vectorStoreService    *services.VectorStoreService
+	statisticsService     *services.StatisticsService
 }
 
 // NewAIHandler 新しいAI統合ハンドラーを作成
@@ -36,6 +38,7 @@ func NewAIHandler(azureOpenAIService *services.AzureOpenAIService, weatherServic
 		weatherService:        weatherService,
 		demandForecastService: demandForecastService,
 		vectorStoreService:    vectorStoreService,
+		statisticsService:     services.NewStatisticsService(weatherService),
 	}
 }
 
@@ -49,6 +52,14 @@ func findIndex(slice []string, candidates ...string) int {
 		}
 	}
 	return -1
+}
+
+// min returns the smaller of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // AnalyzeFile: Logic-based file analysis with monthly aggregation
@@ -205,7 +216,111 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		summary.WriteString(toString(dataRowsSample))
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "summary": summary.String()})
+	// === 目標① 統計分析の実行 ===
+	// 販売データを WeatherSalesData 形式に変換
+	var salesData []models.WeatherSalesData
+	for _, row := range dataRows {
+		if len(row) > dateColIdx && len(row) > productColIdx && len(row) > salesColIdx {
+			dateStr := row[dateColIdx]
+			product := row[productColIdx]
+			salesStr := row[salesColIdx]
+
+			var t time.Time
+			t, _ = time.Parse("2006-01-02", dateStr)
+			if t == (time.Time{}) {
+				t, _ = time.Parse("2006/1/2", dateStr)
+			}
+
+			sales, convErr := strconv.ParseFloat(salesStr, 64)
+			if product != "" && t != (time.Time{}) && convErr == nil {
+				salesData = append(salesData, models.WeatherSalesData{
+					Date:      t.Format("2006-01-02"),
+					ProductID: product,
+					Sales:     sales,
+				})
+			}
+		}
+	}
+
+	// デフォルトの地域コード（三重県）
+	regionCode := "240000"
+	if rc := c.Query("region_code"); rc != "" {
+		regionCode = rc
+	}
+
+	log.Printf("📂 ファイル分析開始: %s, 販売データ件数: %d, 地域コード: %s", fileName, len(salesData), regionCode)
+	
+	// 統計分析を実行
+	var analysisReport *models.AnalysisReport
+	if len(salesData) > 0 {
+		// 日付範囲を確認
+		if len(salesData) > 0 {
+			log.Printf("📅 販売データの最初の日付: %s, 最後の日付: %s", salesData[0].Date, salesData[len(salesData)-1].Date)
+		}
+		
+		// AI分析を呼び出し
+		aiInsights, aiErr := ah.azureOpenAIService.ProcessChatWithContext(
+			"以下の販売データを分析して、需要予測に役立つ洞察を提供してください。",
+			summary.String(),
+		)
+		if aiErr != nil {
+			aiInsights = "AI分析は利用できませんでした。"
+			log.Printf("AI分析エラー: %v", aiErr)
+		}
+
+		// 統計レポート作成
+		report, err := ah.statisticsService.CreateAnalysisReport(
+			fileName,
+			salesData,
+			regionCode,
+			aiInsights,
+		)
+		if err != nil {
+			log.Printf("統計レポート作成エラー: %v", err)
+		} else {
+			analysisReport = report
+			
+			// レポート内容をログ出力（デバッグ用）
+			log.Printf("📊 分析レポート作成完了:")
+			log.Printf("  - レポートID: %s", report.ReportID)
+			log.Printf("  - 日付範囲: %s", report.DateRange)
+			log.Printf("  - 気象データマッチ: %d件", report.WeatherMatches)
+			log.Printf("  - 相関分析結果: %d件", len(report.Correlations))
+			for i, corr := range report.Correlations {
+				log.Printf("    [%d] %s: %.3f (%s)", i+1, corr.Factor, corr.CorrelationCoef, corr.Interpretation)
+			}
+			if report.Regression != nil {
+				log.Printf("  - 回帰分析: %s", report.Regression.Description)
+			}
+			log.Printf("  - 推奨事項: %d件", len(report.Recommendations))
+
+			// === 目標② 分析結果をQdrantに保存 ===
+			go func() {
+				ctx := context.Background()
+				reportJSON, _ := json.Marshal(report)
+				err := ah.vectorStoreService.SaveAnalysisReport(ctx, string(reportJSON), "sales_weather_analysis")
+				if err != nil {
+					log.Printf("分析レポートのQdrant保存に失敗: %v", err)
+				} else {
+					log.Printf("分析レポート %s をQdrantに保存しました", report.ReportID)
+				}
+			}()
+		}
+	}
+
+	// レスポンスに統計分析結果を含める
+	response := gin.H{
+		"success": true,
+		"summary": summary.String(),
+	}
+	if analysisReport != nil {
+		response["analysis_report"] = analysisReport
+		log.Printf("✅ レスポンスに analysis_report を含めました")
+	} else {
+		log.Printf("⚠️ analysisReport が nil のため、レスポンスに含まれていません")
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 type ChatInputRequest struct {
@@ -244,6 +359,7 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 		ragContext.WriteString(req.Context) // ファイル分析のコンテキストを維持
 	}
 
+	// 一般的な会話履歴を検索
 	searchResults, err := ah.vectorStoreService.Search(ctx, req.ChatMessage, 1)
 	if err != nil {
 		log.Printf("ベクトル検索に失敗: %v", err)
@@ -255,6 +371,48 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 			if textPayload, ok := point.Payload["text"]; ok {
 				if text, ok := textPayload.GetKind().(*qdrant.Value_StringValue); ok {
 					ragContext.WriteString(fmt.Sprintf("- %s (類似度: %.2f)\n", text.StringValue, point.Score))
+				}
+			}
+		}
+	}
+
+	// 分析レポートを検索（質問が分析関連の場合）
+	if strings.Contains(strings.ToLower(req.ChatMessage), "分析") ||
+		strings.Contains(strings.ToLower(req.ChatMessage), "相関") ||
+		strings.Contains(strings.ToLower(req.ChatMessage), "ファイル") ||
+		strings.Contains(strings.ToLower(req.ChatMessage), "レポート") {
+
+		analysisResults, err := ah.vectorStoreService.SearchAnalysisReports(ctx, req.ChatMessage, 2)
+		if err != nil {
+			log.Printf("分析レポート検索に失敗: %v", err)
+		} else if len(analysisResults) > 0 {
+			ragContext.WriteString("\n\n## 関連する過去の分析レポート:\n")
+			for _, point := range analysisResults {
+				if textPayload, ok := point.Payload["text"]; ok {
+					if text, ok := textPayload.GetKind().(*qdrant.Value_StringValue); ok {
+						// JSONをパースして読みやすく整形
+						var report models.AnalysisReport
+						if json.Unmarshal([]byte(text.StringValue), &report) == nil {
+							ragContext.WriteString(fmt.Sprintf("\n### レポート: %s\n", report.FileName))
+							ragContext.WriteString(fmt.Sprintf("- 分析日: %s\n", report.AnalysisDate))
+							ragContext.WriteString(fmt.Sprintf("- データ点数: %d\n", report.DataPoints))
+							ragContext.WriteString(fmt.Sprintf("- サマリー:\n%s\n", report.Summary))
+							if len(report.Correlations) > 0 {
+								ragContext.WriteString("- 相関分析結果:\n")
+								for _, corr := range report.Correlations {
+									ragContext.WriteString(fmt.Sprintf("  * %s: %.3f (%s)\n",
+										corr.Factor, corr.CorrelationCoef, corr.Interpretation))
+								}
+							}
+							if report.Regression != nil {
+								ragContext.WriteString(fmt.Sprintf("- 回帰分析: %s\n", report.Regression.Description))
+							}
+						} else {
+							// パース失敗時は生テキストの一部を表示
+							ragContext.WriteString(fmt.Sprintf("- %s (類似度: %.2f)\n",
+								text.StringValue[:min(200, len(text.StringValue))], point.Score))
+						}
+					}
 				}
 			}
 		}

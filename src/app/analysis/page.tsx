@@ -5,10 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useAppContext } from '@/contexts/AppContext'; // ★ AppContextをインポート
 
 export default function AnalysisPage() {
+  // ★ useAppContextから共有のstateと更新関数を取得
+  const { analysisSummary, setAnalysisSummary } = useAppContext();
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [summary, setSummary] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -24,7 +27,7 @@ export default function AnalysisPage() {
 
     setIsLoading(true);
     setError(null);
-    setSummary('');
+    setAnalysisSummary(''); // ★ 共有のサマリーをリセット
     const formData = new FormData();
     formData.append('file', selectedFile);
 
@@ -45,7 +48,7 @@ export default function AnalysisPage() {
 
       const result = await response.json();
       if (result.success) {
-        setSummary(result.summary);
+        setAnalysisSummary(result.summary); // ★ 共有のサマリーを更新
       } else {
         throw new Error(result.error || 'Failed to get analysis summary.');
       }
@@ -89,7 +92,8 @@ export default function AnalysisPage() {
         </Card>
       )}
 
-      {summary && (
+      {/* ★ 共有のanalysisSummaryを表示 */}
+      {analysisSummary && (
         <Card className="max-w-2xl">
           <CardHeader>
             <CardTitle>② 分析サマリー</CardTitle>
@@ -97,7 +101,7 @@ export default function AnalysisPage() {
           </CardHeader>
           <CardContent>
             <pre className="bg-gray-100 dark:bg-gray-800 p-4 rounded-md text-sm whitespace-pre-wrap font-mono">
-              {summary}
+              {analysisSummary}
             </pre>
           </CardContent>
         </Card>
