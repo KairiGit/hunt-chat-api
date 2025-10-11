@@ -5,15 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAppContext } from '@/contexts/AppContext'; // ★ AppContextをインポート
+import { useAppContext } from '@/contexts/AppContext';
+import { AnalysisReportView } from '@/components/analysis/AnalysisReportView';
+import type { AnalysisReport, AnalysisResponse } from '@/types/analysis';
 
 export default function AnalysisPage() {
-  // ★ useAppContextから共有のstateと更新関数を取得
   const { analysisSummary, setAnalysisSummary } = useAppContext();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analysisReport, setAnalysisReport] = useState<AnalysisReport | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -27,7 +29,8 @@ export default function AnalysisPage() {
 
     setIsLoading(true);
     setError(null);
-    setAnalysisSummary(''); // ★ 共有のサマリーをリセット
+    setAnalysisSummary('');
+    setAnalysisReport(null);
     const formData = new FormData();
     formData.append('file', selectedFile);
 
@@ -46,11 +49,12 @@ export default function AnalysisPage() {
         throw new Error(detailedError);
       }
 
-      const result = await response.json();
-      if (result.success) {
-        setAnalysisSummary(result.summary); // ★ 共有のサマリーを更新
+      const result: AnalysisResponse = await response.json();
+      if (result.success && result.analysis_report) {
+        setAnalysisSummary(result.summary);
+        setAnalysisReport(result.analysis_report);
       } else {
-        throw new Error(result.error || 'Failed to get analysis summary.');
+        throw new Error(result.summary || 'Failed to get analysis summary.');
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'An unknown error occurred during analysis.');
@@ -92,19 +96,17 @@ export default function AnalysisPage() {
         </Card>
       )}
 
-      {/* ★ 共有のanalysisSummaryを表示 */}
-      {analysisSummary && (
-        <Card className="max-w-2xl">
-          <CardHeader>
-            <CardTitle>② 分析サマリー</CardTitle>
-            <CardDescription>AIによる分析結果の要約です。この内容はチャットページで引き継がれます。</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <pre className="bg-gray-100 dark:bg-gray-800 p-4 rounded-md text-sm whitespace-pre-wrap font-mono">
-              {analysisSummary}
-            </pre>
-          </CardContent>
-        </Card>
+      {/* 分析レポート表示 */}
+      {analysisReport && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold">② 分析レポート</h2>
+            <span className="text-sm text-muted-foreground">
+              この内容はチャットページで引き継がれます
+            </span>
+          </div>
+          <AnalysisReportView report={analysisReport} />
+        </div>
       )}
     </div>
   );
