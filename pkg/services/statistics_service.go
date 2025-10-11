@@ -338,7 +338,7 @@ func (s *StatisticsService) CreateAnalysisReport(
 	var regression *models.RegressionResult
 	var weatherMatches int
 	var dateRange string
-	
+
 	if len(salesData) > 0 {
 		// 販売データの日付範囲を特定
 		var startDate, endDate time.Time
@@ -371,14 +371,14 @@ func (s *StatisticsService) CreateAnalysisReport(
 		} else {
 			log.Printf("✅ 気象データ取得成功: %d件 (期間: %s 〜 %s)", len(weatherData), startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 		}
-		
+
 		weatherMap := make(map[string]float64)
 		for _, w := range weatherData {
 			weatherMap[w.Date] = w.Temperature
 		}
-		
+
 		log.Printf("📊 販売データ件数: %d, 気象データマップサイズ: %d", len(salesData), len(weatherMap))
-		
+
 		for _, sale := range salesData {
 			if temp, ok := weatherMap[sale.Date]; ok {
 				temps = append(temps, temp)
@@ -386,9 +386,9 @@ func (s *StatisticsService) CreateAnalysisReport(
 				weatherMatches++
 			}
 		}
-		
+
 		log.Printf("🔗 マッチング結果: %d件 / %d件", weatherMatches, len(salesData))
-		
+
 		if len(temps) >= 2 {
 			regression, _ = s.PerformLinearRegression(temps, sales)
 		}

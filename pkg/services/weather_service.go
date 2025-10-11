@@ -291,12 +291,12 @@ func (ws *WeatherService) GetHistoricalWeatherData(regionCode string, startDate,
 	weatherCacheMutex.RUnlock()
 
 	if exists {
-		log.Printf("🎯 キャッシュヒット: 地域=%s, 期間=%s〜%s (%d件)", 
+		log.Printf("🎯 キャッシュヒット: 地域=%s, 期間=%s〜%s (%d件)",
 			regionCode, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), len(cachedData))
 		return cachedData, nil
 	}
 
-	log.Printf("🔍 気象データ生成開始: 地域=%s, 期間=%s〜%s", 
+	log.Printf("🔍 気象データ生成開始: 地域=%s, 期間=%s〜%s",
 		regionCode, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 
 	// キャッシュミス：一括生成（書き込みロックは生成後に取得）
@@ -434,17 +434,17 @@ func (ws *WeatherService) generateMockHistoricalData(regionCode string, date tim
 // generateMockHistoricalDataBulk 指定期間の模擬データを一括生成（高速版）
 func (ws *WeatherService) generateMockHistoricalDataBulk(regionCode string, startDate, endDate time.Time) []HistoricalWeatherData {
 	regionName := ws.getRegionName(regionCode)
-	
+
 	// 日数を計算して事前にメモリ確保
 	days := int(endDate.Sub(startDate).Hours()/24) + 1
 	result := make([]HistoricalWeatherData, 0, days)
-	
+
 	// 一括生成（関数呼び出しのオーバーヘッドを削減）
 	for i := 0; i < days; i++ {
 		date := startDate.AddDate(0, 0, i)
 		month := date.Month()
 		baseTemp := 20.0
-		
+
 		// 季節による気温調整
 		switch {
 		case month >= 6 && month <= 8: // 夏
@@ -456,10 +456,10 @@ func (ws *WeatherService) generateMockHistoricalDataBulk(regionCode string, star
 		case month >= 9 && month <= 11: // 秋
 			baseTemp = 20.0
 		}
-		
+
 		// 日付に基づく変動を追加
 		dayVariation := float64(date.Day()%10 - 5)
-		
+
 		data := HistoricalWeatherData{
 			Date:          date.Format("2006-01-02"),
 			RegionCode:    regionCode,
@@ -476,10 +476,10 @@ func (ws *WeatherService) generateMockHistoricalDataBulk(regionCode string, star
 			WeatherCode:   "100",
 			DataSource:    "模擬データ（一括生成）",
 		}
-		
+
 		result = append(result, data)
 	}
-	
+
 	return result
 }
 

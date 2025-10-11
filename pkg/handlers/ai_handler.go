@@ -249,7 +249,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	}
 
 	log.Printf("📂 ファイル分析開始: %s, 販売データ件数: %d, 地域コード: %s", fileName, len(salesData), regionCode)
-	
+
 	// 統計分析を実行
 	var analysisReport *models.AnalysisReport
 	if len(salesData) > 0 {
@@ -257,7 +257,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		if len(salesData) > 0 {
 			log.Printf("📅 販売データの最初の日付: %s, 最後の日付: %s", salesData[0].Date, salesData[len(salesData)-1].Date)
 		}
-		
+
 		// AI分析を呼び出し
 		aiInsights, aiErr := ah.azureOpenAIService.ProcessChatWithContext(
 			"以下の販売データを分析して、需要予測に役立つ洞察を提供してください。",
@@ -279,7 +279,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			log.Printf("統計レポート作成エラー: %v", err)
 		} else {
 			analysisReport = report
-			
+
 			// レポート内容をログ出力（デバッグ用）
 			log.Printf("📊 分析レポート作成完了:")
 			log.Printf("  - レポートID: %s", report.ReportID)

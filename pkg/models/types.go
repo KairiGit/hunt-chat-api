@@ -70,12 +70,12 @@ type CorrelationResult struct {
 
 // RegressionResult represents the result of regression analysis
 type RegressionResult struct {
-	Slope       float64 `json:"slope"`        // Regression slope
-	Intercept   float64 `json:"intercept"`    // Regression intercept
-	RSquared    float64 `json:"r_squared"`    // R² (coefficient of determination)
-	Prediction  float64 `json:"prediction"`   // Predicted value
-	Confidence  float64 `json:"confidence"`   // Confidence level
-	Description string  `json:"description"`  // Description of the result
+	Slope       float64 `json:"slope"`       // Regression slope
+	Intercept   float64 `json:"intercept"`   // Regression intercept
+	RSquared    float64 `json:"r_squared"`   // R² (coefficient of determination)
+	Prediction  float64 `json:"prediction"`  // Predicted value
+	Confidence  float64 `json:"confidence"`  // Confidence level
+	Description string  `json:"description"` // Description of the result
 }
 
 // AnalysisReport represents a comprehensive analysis report
