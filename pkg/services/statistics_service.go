@@ -564,8 +564,8 @@ func (s *StatisticsService) PredictFutureSales(
 			Upper:      upperBound,
 			Confidence: confidenceLevel,
 		},
-		Confidence:       confidence,
-		PredictionFactors: factors,
+		Confidence:         confidence,
+		PredictionFactors:  factors,
 		RegressionEquation: fmt.Sprintf("y = %.2fx + %.2f", regression.Slope, regression.Intercept),
 	}, nil
 }
@@ -640,4 +640,726 @@ func (s *StatisticsService) GenerateAIQuestion(anomaly models.AnomalyDetection) 
 			anomaly.ActualValue,
 		)
 	}
+}
+
+// ForecastProductDemand 製品別の需要予測を実行
+func (s *StatisticsService) ForecastProductDemand(
+	productID string,
+	productName string,
+	historicalData []models.SalesDataPoint,
+	period string,
+	regionCode string,
+) (models.ProductForecast, error) {
+	if len(historicalData) < 14 {
+		return models.ProductForecast{}, fmt.Errorf("予測には最低14日分のデータが必要です")
+	}
+
+	// 期間の日数を決定
+	var forecastDays int
+	switch period {
+	case "week":
+		forecastDays = 7
+	case "2weeks":
+		forecastDays = 14
+	case "month":
+		forecastDays = 30
+	default:
+		forecastDays = 7
+	}
+
+	// 統計情報を計算
+	stats := s.calculateProductStatistics(historicalData)
+
+	// 曜日効果を計算
+	weekdayEffect := s.calculateWeekdayEffect(historicalData)
+
+	// 気温との相関を計算
+	var temperatures, sales []float64
+	for _, point := range historicalData {
+		if point.Temperature > 0 {
+			temperatures = append(temperatures, point.Temperature)
+			sales = append(sales, point.Sales)
+		}
+	}
+
+	var regression *models.RegressionResult
+	var err error
+	if len(temperatures) >= 10 {
+		regression, err = s.PerformLinearRegression(temperatures, sales)
+		if err != nil {
+			log.Printf("回帰分析エラー: %v", err)
+		}
+	}
+
+	// 将来の予測日を生成
+	lastDate, _ := time.Parse("2006-01-02", historicalData[len(historicalData)-1].Date)
+	var dailyForecasts []models.DailyForecast
+	var totalForecast float64
+
+	for i := 1; i <= forecastDays; i++ {
+		forecastDate := lastDate.AddDate(0, 0, i)
+		dayOfWeek := s.getDayOfWeekJP(forecastDate.Weekday())
+
+		// 基準値: 全体平均
+		baseValue := stats.Mean
+
+		// 曜日効果を適用
+		if effect, ok := weekdayEffect[dayOfWeek]; ok {
+			baseValue = baseValue * effect
+		}
+
+		// 気温効果を適用（回帰モデルがある場合）
+		if regression != nil && regression.RSquared > 0.1 {
+			// 簡易的に季節の平均気温を使用
+			seasonalTemp := s.getSeasonalTemperature(forecastDate.Month())
+			tempAdjustment := regression.Slope * (seasonalTemp - s.calculateMean(temperatures))
+			baseValue += tempAdjustment
+		}
+
+		// トレンド効果（単純移動平均の傾き）
+		trendAdjustment := s.calculateTrend(historicalData) * float64(i)
+		baseValue += trendAdjustment
+
+		dailyForecasts = append(dailyForecasts, models.DailyForecast{
+			Date:           forecastDate.Format("2006-01-02"),
+			DayOfWeek:      dayOfWeek,
+			PredictedValue: math.Max(0, baseValue), // 負の値を避ける
+			Temperature:    s.getSeasonalTemperature(forecastDate.Month()),
+		})
+
+		totalForecast += baseValue
+	}
+
+	// 信頼区間を計算
+	stdDev := stats.StdDev
+	zScore := 1.96 // 95% confidence
+	marginTotal := zScore * stdDev * math.Sqrt(float64(forecastDays))
+
+	confidence := 0.5 // デフォルト
+	if regression != nil {
+		confidence = regression.RSquared
+	}
+
+	// 期間の範囲を文字列化
+	startForecast := dailyForecasts[0].Date
+	endForecast := dailyForecasts[len(dailyForecasts)-1].Date
+	forecastPeriod := fmt.Sprintf("%s 〜 %s", startForecast, endForecast)
+
+	// 推奨事項を生成
+	recommendations := s.generateForecastRecommendations(totalForecast, stats, period)
+
+	// 季節性の判定
+	seasonality := s.detectSeasonality(historicalData)
+
+	return models.ProductForecast{
+		ProductID:      productID,
+		ProductName:    productName,
+		ForecastPeriod: forecastPeriod,
+		PredictedTotal: math.Max(0, totalForecast),
+		DailyAverage:   math.Max(0, totalForecast/float64(forecastDays)),
+		ConfidenceInterval: models.ConfidenceInterval{
+			Lower:      math.Max(0, totalForecast-marginTotal),
+			Upper:      totalForecast + marginTotal,
+			Confidence: 0.95,
+		},
+		Confidence:      confidence,
+		DailyBreakdown:  dailyForecasts,
+		Factors:         s.buildFactorsList(regression, weekdayEffect, stats),
+		Seasonality:     seasonality,
+		Recommendations: recommendations,
+	}, nil
+}
+
+// calculateProductStatistics 製品の統計情報を計算
+func (s *StatisticsService) calculateProductStatistics(data []models.SalesDataPoint) models.ProductStatistics {
+	var sales []float64
+	weekdaySales := make(map[string][]float64)
+	monthlySales := make(map[string][]float64)
+
+	for _, point := range data {
+		sales = append(sales, point.Sales)
+		if point.DayOfWeek != "" {
+			weekdaySales[point.DayOfWeek] = append(weekdaySales[point.DayOfWeek], point.Sales)
+		}
+		if t, err := time.Parse("2006-01-02", point.Date); err == nil {
+			month := fmt.Sprintf("%d月", int(t.Month()))
+			monthlySales[month] = append(monthlySales[month], point.Sales)
+		}
+	}
+
+	mean := s.calculateMean(sales)
+	stdDev := s.calculateStandardDeviation(sales)
+
+	// 曜日別平均
+	weekdayAvg := make(map[string]float64)
+	for day, values := range weekdaySales {
+		weekdayAvg[day] = s.calculateMean(values)
+	}
+
+	// 月別平均
+	monthlyAvg := make(map[string]float64)
+	for month, values := range monthlySales {
+		monthlyAvg[month] = s.calculateMean(values)
+	}
+
+	// トレンド方向を判定
+	trend := s.calculateTrend(data)
+	var trendDirection string
+	if trend > 0.5 {
+		trendDirection = "増加"
+	} else if trend < -0.5 {
+		trendDirection = "減少"
+	} else {
+		trendDirection = "安定"
+	}
+
+	sortedSales := make([]float64, len(sales))
+	copy(sortedSales, sales)
+	sort.Float64s(sortedSales)
+
+	median := sortedSales[len(sortedSales)/2]
+	min := sortedSales[0]
+	max := sortedSales[len(sortedSales)-1]
+
+	return models.ProductStatistics{
+		Mean:           mean,
+		Median:         median,
+		StdDev:         stdDev,
+		Min:            min,
+		Max:            max,
+		WeekdayAverage: weekdayAvg,
+		MonthlyAverage: monthlyAvg,
+		TrendDirection: trendDirection,
+	}
+}
+
+// calculateWeekdayEffect 曜日効果を計算（全体平均に対する比率）
+func (s *StatisticsService) calculateWeekdayEffect(data []models.SalesDataPoint) map[string]float64 {
+	weekdaySales := make(map[string][]float64)
+	var allSales []float64
+
+	for _, point := range data {
+		allSales = append(allSales, point.Sales)
+		if point.DayOfWeek != "" {
+			weekdaySales[point.DayOfWeek] = append(weekdaySales[point.DayOfWeek], point.Sales)
+		}
+	}
+
+	overallMean := s.calculateMean(allSales)
+	effect := make(map[string]float64)
+
+	for day, sales := range weekdaySales {
+		dayMean := s.calculateMean(sales)
+		effect[day] = dayMean / overallMean // 1.0が平均、>1.0が平均以上
+	}
+
+	return effect
+}
+
+// calculateTrend 単純なトレンドを計算（1日あたりの変化量）
+func (s *StatisticsService) calculateTrend(data []models.SalesDataPoint) float64 {
+	if len(data) < 2 {
+		return 0
+	}
+
+	// 最初の1/3と最後の1/3の平均を比較
+	n := len(data)
+	firstThird := n / 3
+	var earlySum, lateSum float64
+
+	for i := 0; i < firstThird; i++ {
+		earlySum += data[i].Sales
+	}
+	for i := n - firstThird; i < n; i++ {
+		lateSum += data[i].Sales
+	}
+
+	earlyAvg := earlySum / float64(firstThird)
+	lateAvg := lateSum / float64(firstThird)
+
+	// 1日あたりの変化量
+	return (lateAvg - earlyAvg) / float64(n-firstThird)
+}
+
+// getSeasonalTemperature 月ごとの平均気温を返す（簡易版）
+func (s *StatisticsService) getSeasonalTemperature(month time.Month) float64 {
+	temps := map[time.Month]float64{
+		time.January:   5.0,
+		time.February:  6.0,
+		time.March:     10.0,
+		time.April:     15.0,
+		time.May:       20.0,
+		time.June:      24.0,
+		time.July:      28.0,
+		time.August:    29.0,
+		time.September: 25.0,
+		time.October:   19.0,
+		time.November:  13.0,
+		time.December:  7.0,
+	}
+	return temps[month]
+}
+
+// getDayOfWeekJP 曜日を日本語で返す
+func (s *StatisticsService) getDayOfWeekJP(weekday time.Weekday) string {
+	days := []string{"日", "月", "火", "水", "木", "金", "土"}
+	return days[int(weekday)]
+}
+
+// detectSeasonality 季節性を検出
+func (s *StatisticsService) detectSeasonality(data []models.SalesDataPoint) string {
+	if len(data) < 30 {
+		return ""
+	}
+
+	monthlySales := make(map[int][]float64)
+	for _, point := range data {
+		if t, err := time.Parse("2006-01-02", point.Date); err == nil {
+			month := int(t.Month())
+			monthlySales[month] = append(monthlySales[month], point.Sales)
+		}
+	}
+
+	// 夏季(6-8月)と冬季(12-2月)の平均を比較
+	var summerSum, winterSum float64
+	var summerCount, winterCount int
+
+	for month, sales := range monthlySales {
+		avg := s.calculateMean(sales)
+		if month >= 6 && month <= 8 {
+			summerSum += avg
+			summerCount++
+		} else if month == 12 || month <= 2 {
+			winterSum += avg
+			winterCount++
+		}
+	}
+
+	if summerCount > 0 && winterCount > 0 {
+		summerAvg := summerSum / float64(summerCount)
+		winterAvg := winterSum / float64(winterCount)
+
+		diff := (summerAvg - winterAvg) / winterAvg * 100
+		if diff > 20 {
+			return fmt.Sprintf("夏季需要が高い傾向（冬季比 +%.0f%%）", diff)
+		} else if diff < -20 {
+			return fmt.Sprintf("冬季需要が高い傾向（夏季比 +%.0f%%）", -diff)
+		}
+	}
+
+	return "明確な季節性は検出されませんでした"
+}
+
+// generateForecastRecommendations 予測に基づく推奨事項を生成
+func (s *StatisticsService) generateForecastRecommendations(forecast float64, stats models.ProductStatistics, period string) []string {
+	var recommendations []string
+
+	// 需要レベルに基づく推奨
+	if forecast > stats.Mean*1.2 {
+		recommendations = append(recommendations, fmt.Sprintf("予測需要が平均より高いです。十分な在庫を確保してください（予測: %.0f, 平均: %.0f）", forecast, stats.Mean))
+	} else if forecast < stats.Mean*0.8 {
+		recommendations = append(recommendations, "予測需要が平均より低いです。過剰在庫に注意してください")
+	}
+
+	// 曜日効果に基づく推奨
+	if len(stats.WeekdayAverage) > 0 {
+		var maxDay string
+		var maxValue float64
+		for day, avg := range stats.WeekdayAverage {
+			if avg > maxValue {
+				maxValue = avg
+				maxDay = day
+			}
+		}
+		if maxDay != "" {
+			recommendations = append(recommendations, fmt.Sprintf("%s曜日の需要が最も高い傾向があります", maxDay))
+		}
+	}
+
+	// トレンドに基づく推奨
+	switch stats.TrendDirection {
+	case "増加":
+		recommendations = append(recommendations, "需要増加トレンドが見られます。供給体制の強化を検討してください")
+	case "減少":
+		recommendations = append(recommendations, "需要減少トレンドが見られます。マーケティング施策の見直しを推奨します")
+	}
+
+	return recommendations
+}
+
+// buildFactorsList 予測に使用した要因リストを生成
+func (s *StatisticsService) buildFactorsList(regression *models.RegressionResult, weekdayEffect map[string]float64, stats models.ProductStatistics) []string {
+	factors := []string{
+		fmt.Sprintf("過去の販売実績（平均: %.0f個/日）", stats.Mean),
+		fmt.Sprintf("トレンド方向: %s", stats.TrendDirection),
+	}
+
+	if len(weekdayEffect) > 0 {
+		factors = append(factors, "曜日による需要変動を考慮")
+	}
+
+	if regression != nil && regression.RSquared > 0.1 {
+		factors = append(factors, fmt.Sprintf("気温との相関（R² = %.2f）", regression.RSquared))
+	}
+
+	factors = append(factors, "季節性パターンを分析")
+
+	return factors
+}
+
+// AnalyzeWeeklySales 週次単位での販売分析
+func (s *StatisticsService) AnalyzeWeeklySales(productID, productName string, salesData []models.SalesDataPoint, startDate, endDate time.Time) (*models.WeeklyAnalysisResponse, error) {
+	if len(salesData) == 0 {
+		return nil, fmt.Errorf("販売データが空です")
+	}
+
+	// データを週単位でグループ化
+	weeklyGroups := s.groupByWeek(salesData, startDate)
+	
+	// 週ごとのサマリーを生成
+	weeklySummaries := make([]models.WeeklySummary, 0)
+	var prevWeekSales float64 = 0
+	
+	for weekNum := 0; weekNum < len(weeklyGroups); weekNum++ {
+		weekData, exists := weeklyGroups[weekNum]
+		if !exists {
+			continue
+		}
+		summary := s.calculateWeeklySummary(weekNum, weekData, prevWeekSales)
+		weeklySummaries = append(weeklySummaries, summary)
+		prevWeekSales = summary.TotalSales
+	}
+
+	// 全体統計を計算
+	overallStats := s.calculateWeeklyOverallStats(weeklySummaries)
+	
+	// トレンド分析
+	trends := s.analyzeWeeklyTrends(weeklySummaries)
+	
+	// 推奨事項を生成
+	recommendations := s.generateWeeklyRecommendations(weeklySummaries, overallStats, trends)
+
+	return &models.WeeklyAnalysisResponse{
+		ProductID:       productID,
+		ProductName:     productName,
+		AnalysisPeriod:  fmt.Sprintf("%s ~ %s", startDate.Format("2006-01-02"), endDate.Format("2006-01-02")),
+		TotalWeeks:      len(weeklySummaries),
+		WeeklySummary:   weeklySummaries,
+		OverallStats:    overallStats,
+		Trends:          trends,
+		Recommendations: recommendations,
+	}, nil
+}
+
+// groupByWeek データを週単位でグループ化（月曜始まり）
+func (s *StatisticsService) groupByWeek(data []models.SalesDataPoint, startDate time.Time) map[int][]models.SalesDataPoint {
+	weeklyGroups := make(map[int][]models.SalesDataPoint)
+	
+	for _, point := range data {
+		date, err := time.Parse("2006-01-02", point.Date)
+		if err != nil {
+			continue
+		}
+		
+		// 開始日からの週数を計算（月曜始まり）
+		weekNum := s.getWeekNumber(date, startDate)
+		weeklyGroups[weekNum] = append(weeklyGroups[weekNum], point)
+	}
+	
+	return weeklyGroups
+}
+
+// getWeekNumber 開始日からの週番号を計算（月曜始まり）
+func (s *StatisticsService) getWeekNumber(date, startDate time.Time) int {
+	// 月曜日に調整
+	startMonday := s.adjustToMonday(startDate)
+	dateMonday := s.adjustToMonday(date)
+	
+	daysDiff := dateMonday.Sub(startMonday).Hours() / 24
+	weekNum := int(daysDiff) / 7
+	
+	if weekNum < 0 {
+		weekNum = 0
+	}
+	
+	return weekNum
+}
+
+// adjustToMonday 日付をその週の月曜日に調整
+func (s *StatisticsService) adjustToMonday(date time.Time) time.Time {
+	weekday := int(date.Weekday())
+	if weekday == 0 { // 日曜日
+		weekday = 7
+	}
+	daysToMonday := weekday - 1
+	return date.AddDate(0, 0, -daysToMonday)
+}
+
+// calculateWeeklySummary 週ごとのサマリーを計算
+func (s *StatisticsService) calculateWeeklySummary(weekNum int, weekData []models.SalesDataPoint, prevWeekSales float64) models.WeeklySummary {
+	if len(weekData) == 0 {
+		return models.WeeklySummary{WeekNumber: weekNum}
+	}
+
+	// 週の開始日・終了日を取得
+	firstDate, _ := time.Parse("2006-01-02", weekData[0].Date)
+	lastDate, _ := time.Parse("2006-01-02", weekData[len(weekData)-1].Date)
+	
+	// 合計・平均・最小・最大を計算
+	var total, avgTemp float64
+	min := math.MaxFloat64
+	max := -math.MaxFloat64
+	
+	for _, point := range weekData {
+		total += point.Sales
+		avgTemp += point.Temperature
+		if point.Sales < min {
+			min = point.Sales
+		}
+		if point.Sales > max {
+			max = point.Sales
+		}
+	}
+	
+	businessDays := len(weekData)
+	average := total / float64(businessDays)
+	avgTemp = avgTemp / float64(businessDays)
+	
+	// 前週比を計算
+	var weekOverWeek float64
+	if prevWeekSales > 0 {
+		weekOverWeek = ((total - prevWeekSales) / prevWeekSales) * 100
+	}
+	
+	// 標準偏差を計算
+	var sumSquaredDiff float64
+	for _, point := range weekData {
+		diff := point.Sales - average
+		sumSquaredDiff += diff * diff
+	}
+	stdDev := math.Sqrt(sumSquaredDiff / float64(businessDays))
+
+	return models.WeeklySummary{
+		WeekNumber:     weekNum + 1, // 1始まりに
+		WeekStart:      firstDate.Format("2006-01-02"),
+		WeekEnd:        lastDate.Format("2006-01-02"),
+		TotalSales:     total,
+		AverageSales:   average,
+		MinSales:       min,
+		MaxSales:       max,
+		BusinessDays:   businessDays,
+		WeekOverWeek:   weekOverWeek,
+		StdDev:         stdDev,
+		AvgTemperature: avgTemp,
+	}
+}
+
+// calculateWeeklyOverallStats 全体統計を計算
+func (s *StatisticsService) calculateWeeklyOverallStats(summaries []models.WeeklySummary) models.WeeklyOverallStats {
+	if len(summaries) == 0 {
+		return models.WeeklyOverallStats{}
+	}
+
+	// 週次売上を集計
+	weeklySales := make([]float64, len(summaries))
+	var total float64
+	var bestWeek, worstWeek int
+	var bestSales, worstSales float64 = -1, math.MaxFloat64
+	
+	for i, summary := range summaries {
+		weeklySales[i] = summary.TotalSales
+		total += summary.TotalSales
+		
+		if summary.TotalSales > bestSales {
+			bestSales = summary.TotalSales
+			bestWeek = summary.WeekNumber
+		}
+		if summary.TotalSales < worstSales {
+			worstSales = summary.TotalSales
+			worstWeek = summary.WeekNumber
+		}
+	}
+	
+	avgWeeklySales := total / float64(len(summaries))
+	
+	// 中央値を計算
+	sortedSales := make([]float64, len(weeklySales))
+	copy(sortedSales, weeklySales)
+	sort.Float64s(sortedSales)
+	
+	var median float64
+	mid := len(sortedSales) / 2
+	if len(sortedSales)%2 == 0 {
+		median = (sortedSales[mid-1] + sortedSales[mid]) / 2
+	} else {
+		median = sortedSales[mid]
+	}
+	
+	// 標準偏差を計算
+	var sumSquaredDiff float64
+	for _, sales := range weeklySales {
+		diff := sales - avgWeeklySales
+		sumSquaredDiff += diff * diff
+	}
+	stdDev := math.Sqrt(sumSquaredDiff / float64(len(weeklySales)))
+	
+	// 成長率を計算（最初の週 vs 最後の週）
+	var growthRate float64
+	if len(summaries) >= 2 && summaries[0].TotalSales > 0 {
+		firstWeek := summaries[0].TotalSales
+		lastWeek := summaries[len(summaries)-1].TotalSales
+		growthRate = ((lastWeek - firstWeek) / firstWeek) * 100
+	}
+	
+	// 変動係数（ボラティリティ）
+	var volatility float64
+	if avgWeeklySales > 0 {
+		volatility = stdDev / avgWeeklySales
+	}
+
+	return models.WeeklyOverallStats{
+		AverageWeeklySales: avgWeeklySales,
+		MedianWeeklySales:  median,
+		StdDevWeeklySales:  stdDev,
+		BestWeek:           bestWeek,
+		WorstWeek:          worstWeek,
+		GrowthRate:         growthRate,
+		Volatility:         volatility,
+	}
+}
+
+// analyzeWeeklyTrends 週次トレンドを分析
+func (s *StatisticsService) analyzeWeeklyTrends(summaries []models.WeeklySummary) models.WeeklyTrends {
+	if len(summaries) < 2 {
+		return models.WeeklyTrends{Direction: "データ不足"}
+	}
+
+	// 前週比の平均を計算
+	var totalGrowth float64
+	var positiveWeeks, negativeWeeks int
+	var peakWeek, lowWeek int
+	var peakSales, lowSales float64 = -1, math.MaxFloat64
+	
+	for i, summary := range summaries {
+		if i > 0 { // 最初の週はスキップ
+			totalGrowth += summary.WeekOverWeek
+			if summary.WeekOverWeek > 0 {
+				positiveWeeks++
+			} else if summary.WeekOverWeek < 0 {
+				negativeWeeks++
+			}
+		}
+		
+		if summary.TotalSales > peakSales {
+			peakSales = summary.TotalSales
+			peakWeek = summary.WeekNumber
+		}
+		if summary.TotalSales < lowSales {
+			lowSales = summary.TotalSales
+			lowWeek = summary.WeekNumber
+		}
+	}
+	
+	avgGrowth := totalGrowth / float64(len(summaries)-1)
+	
+	// トレンド方向を判定
+	var direction string
+	var strength float64
+	
+	if avgGrowth > 2 {
+		direction = "上昇"
+		strength = math.Min(avgGrowth/10, 1.0)
+	} else if avgGrowth < -2 {
+		direction = "下降"
+		strength = math.Min(math.Abs(avgGrowth)/10, 1.0)
+	} else {
+		direction = "横ばい"
+		strength = 1.0 - math.Min(math.Abs(avgGrowth)/2, 1.0)
+	}
+	
+	// 季節性の検出（簡易版）
+	var seasonality string
+	if len(summaries) >= 4 {
+		// 前半と後半で比較
+		midPoint := len(summaries) / 2
+		var firstHalfAvg, secondHalfAvg float64
+		
+		for i := 0; i < midPoint; i++ {
+			firstHalfAvg += summaries[i].TotalSales
+		}
+		firstHalfAvg /= float64(midPoint)
+		
+		for i := midPoint; i < len(summaries); i++ {
+			secondHalfAvg += summaries[i].TotalSales
+		}
+		secondHalfAvg /= float64(len(summaries) - midPoint)
+		
+		diff := ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100
+		if diff > 15 {
+			seasonality = "後半期に需要増加傾向"
+		} else if diff < -15 {
+			seasonality = "前半期に需要集中傾向"
+		} else {
+			seasonality = "明確な季節パターンなし"
+		}
+	}
+
+	return models.WeeklyTrends{
+		Direction:     direction,
+		Strength:      strength,
+		Seasonality:   seasonality,
+		PeakWeek:      peakWeek,
+		LowWeek:       lowWeek,
+		AverageGrowth: avgGrowth,
+	}
+}
+
+// generateWeeklyRecommendations 週次分析に基づく推奨事項を生成
+func (s *StatisticsService) generateWeeklyRecommendations(summaries []models.WeeklySummary, stats models.WeeklyOverallStats, trends models.WeeklyTrends) []string {
+	var recommendations []string
+
+	// トレンドに基づく推奨
+	switch trends.Direction {
+	case "上昇":
+		recommendations = append(recommendations, 
+			fmt.Sprintf("📈 上昇トレンド（平均+%.1f%%/週）：需要増加に備えて生産能力の確保を推奨", trends.AverageGrowth))
+	case "下降":
+		recommendations = append(recommendations, 
+			fmt.Sprintf("📉 下降トレンド（平均%.1f%%/週）：在庫最適化とマーケティング強化を検討", trends.AverageGrowth))
+	case "横ばい":
+		recommendations = append(recommendations, 
+			"📊 安定した需要パターン：現状の生産計画を維持することを推奨")
+	}
+
+	// ボラティリティに基づく推奨
+	if stats.Volatility > 0.3 {
+		recommendations = append(recommendations, 
+			fmt.Sprintf("⚠️ 需要変動が大きいです（変動係数: %.2f）：安全在庫の確保を推奨", stats.Volatility))
+	} else if stats.Volatility < 0.15 {
+		recommendations = append(recommendations, 
+			"✅ 需要が安定しています：JIT生産方式の適用を検討可能")
+	}
+
+	// ベスト・ワースト週に基づく推奨
+	if stats.BestWeek > 0 && stats.WorstWeek > 0 {
+		recommendations = append(recommendations, 
+			fmt.Sprintf("📅 第%d週が最高、第%d週が最低需要：パターン分析で生産計画を最適化", stats.BestWeek, stats.WorstWeek))
+	}
+
+	// 成長率に基づく推奨
+	if stats.GrowthRate > 20 {
+		recommendations = append(recommendations, 
+			fmt.Sprintf("🚀 期間全体で%.1f%%成長：需要急増に対応した供給体制の強化が必要", stats.GrowthRate))
+	} else if stats.GrowthRate < -20 {
+		recommendations = append(recommendations, 
+			fmt.Sprintf("📊 期間全体で%.1f%%減少：需要回復施策の立案を推奨", stats.GrowthRate))
+	}
+
+	// 季節性に基づく推奨
+	if trends.Seasonality != "明確な季節パターンなし" {
+		recommendations = append(recommendations, 
+			fmt.Sprintf("🌤️ %s：季節要因を考慮した在庫管理を実施", trends.Seasonality))
+	}
+
+	return recommendations
 }

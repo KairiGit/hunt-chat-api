@@ -29,15 +29,48 @@ interface SalesPrediction {
   regression_equation: string;
 }
 
+interface DailyForecast {
+  date: string;
+  day_of_week: string;
+  predicted_value: number;
+  temperature?: number;
+  weather?: string;
+}
+
+interface ProductForecast {
+  product_id: string;
+  product_name: string;
+  forecast_period: string;
+  predicted_total: number;
+  daily_average: number;
+  confidence_interval: {
+    lower: number;
+    upper: number;
+    confidence: number;
+  };
+  confidence: number;
+  daily_breakdown: DailyForecast[];
+  factors: string[];
+  seasonality?: string;
+  recommendations: string[];
+}
+
 export default function DashboardPage() {
   const [anomalies, setAnomalies] = useState<AnomalyDetection[]>([]);
   const [prediction, setPrediction] = useState<SalesPrediction | null>(null);
+  const [productForecast, setProductForecast] = useState<ProductForecast | null>(null);
   const [isLoadingAnomalies, setIsLoadingAnomalies] = useState(false);
   const [isLoadingPrediction, setIsLoadingPrediction] = useState(false);
+  const [isLoadingProductForecast, setIsLoadingProductForecast] = useState(false);
   
   // 予測パラメータ
   const [futureTemp, setFutureTemp] = useState<number>(25);
   const [confidenceLevel, setConfidenceLevel] = useState<number>(0.95);
+  
+  // 製品予測パラメータ
+  const [selectedProduct, setSelectedProduct] = useState<string>('P001');
+  const [productName, setProductName] = useState<string>('製品A');
+  const [forecastPeriod, setForecastPeriod] = useState<string>('week');
 
   // 異常検知用サンプルデータ
   const sampleSales = [100, 105, 110, 115, 95, 120, 300, 125, 130, 135, 140, 145, 50, 150];
@@ -45,6 +78,14 @@ export default function DashboardPage() {
     '2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04', '2024-01-05',
     '2024-01-06', '2024-01-07', '2024-01-08', '2024-01-09', '2024-01-10',
     '2024-01-11', '2024-01-12', '2024-01-13', '2024-01-14',
+  ];
+  
+  const products = [
+    { id: 'P001', name: '製品A' },
+    { id: 'P002', name: '製品B' },
+    { id: 'P003', name: '製品C' },
+    { id: 'P004', name: '製品D' },
+    { id: 'P005', name: '製品E' },
   ];
 
   const detectAnomalies = async () => {
@@ -91,6 +132,31 @@ export default function DashboardPage() {
       console.error('予測エラー:', error);
     } finally {
       setIsLoadingPrediction(false);
+    }
+  };
+
+  const forecastProduct = async () => {
+    setIsLoadingProductForecast(true);
+    try {
+      const response = await fetch('/api/v1/ai/forecast-product', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: selectedProduct,
+          product_name: productName,
+          period: forecastPeriod,
+          region_code: '240000',
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setProductForecast(data.forecast);
+      }
+    } catch (error) {
+      console.error('製品予測エラー:', error);
+    } finally {
+      setIsLoadingProductForecast(false);
     }
   };
 
@@ -201,6 +267,165 @@ export default function DashboardPage() {
                   信頼度: {(prediction.confidence * 100).toFixed(1)}%
                 </span>
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 製品別需要予測セクション */}
+      <Card>
+        <CardHeader>
+          <CardTitle>📦 製品別需要予測</CardTitle>
+          <CardDescription>
+            製品ごとの需要を期間別に予測します（週次・月次対応）
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label htmlFor="product">製品</Label>
+              <select
+                id="product"
+                className="w-full p-2 border rounded"
+                value={selectedProduct}
+                onChange={(e) => {
+                  setSelectedProduct(e.target.value);
+                  const product = products.find(p => p.id === e.target.value);
+                  if (product) setProductName(product.name);
+                }}
+              >
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} ({product.id})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="period">予測期間</Label>
+              <select
+                id="period"
+                className="w-full p-2 border rounded"
+                value={forecastPeriod}
+                onChange={(e) => setForecastPeriod(e.target.value)}
+              >
+                <option value="week">1週間</option>
+                <option value="2weeks">2週間</option>
+                <option value="month">1ヶ月</option>
+              </select>
+            </div>
+          </div>
+          
+          <Button onClick={forecastProduct} disabled={isLoadingProductForecast}>
+            {isLoadingProductForecast ? '予測中...' : '需要を予測'}
+          </Button>
+
+          {productForecast && (
+            <div className="mt-6 space-y-6">
+              {/* サマリー */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900">
+                  <CardContent className="pt-6">
+                    <p className="text-sm text-muted-foreground">予測期間</p>
+                    <p className="text-lg font-bold">{productForecast.forecast_period}</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900">
+                  <CardContent className="pt-6">
+                    <p className="text-sm text-muted-foreground">予測合計</p>
+                    <p className="text-3xl font-bold">{productForecast.predicted_total.toFixed(0)} 個</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      信頼区間: {productForecast.confidence_interval.lower.toFixed(0)} 〜 {productForecast.confidence_interval.upper.toFixed(0)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900">
+                  <CardContent className="pt-6">
+                    <p className="text-sm text-muted-foreground">1日平均</p>
+                    <p className="text-3xl font-bold">{productForecast.daily_average.toFixed(1)} 個</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      信頼度: {(productForecast.confidence * 100).toFixed(0)}%
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* 日別予測 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">日別予測</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {productForecast.daily_breakdown.slice(0, 7).map((day, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded">
+                        <div className="flex items-center gap-3">
+                          <span className="font-semibold w-20">{day.date}</span>
+                          <span className="text-sm text-muted-foreground">({day.day_of_week})</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          {day.temperature && (
+                            <span className="text-sm text-muted-foreground">
+                              🌡️ {day.temperature.toFixed(1)}°C
+                            </span>
+                          )}
+                          <span className="font-bold text-lg">
+                            {day.predicted_value.toFixed(0)} 個
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    {productForecast.daily_breakdown.length > 7 && (
+                      <p className="text-sm text-center text-muted-foreground">
+                        ...他 {productForecast.daily_breakdown.length - 7} 日
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 予測要因 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">予測要因</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2">
+                    {productForecast.factors.map((factor, idx) => (
+                      <li key={idx} className="flex items-start gap-2 text-sm">
+                        <span className="text-blue-500">•</span>
+                        <span>{factor}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {productForecast.seasonality && (
+                    <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950 rounded border border-blue-200 dark:border-blue-800">
+                      <p className="text-sm">
+                        <strong>季節性: </strong>{productForecast.seasonality}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* 推奨事項 */}
+              {productForecast.recommendations.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">💡 推奨事項</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {productForecast.recommendations.map((rec, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-sm">
+                          <span className="text-green-500">✓</span>
+                          <span>{rec}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </CardContent>

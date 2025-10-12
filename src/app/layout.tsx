@@ -33,24 +33,70 @@ export default function RootLayout({
         <AppProvider>
           <div className="flex min-h-screen">
             {/* Sidebar */}
-            <aside className="w-64 bg-white dark:bg-gray-800 shadow-md p-4 flex flex-col">
-              <div className="p-4">
-                <h1 className="text-xl font-bold">HUNT Chat</h1>
+            <aside className="w-64 bg-white dark:bg-gray-800 shadow-md flex flex-col">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">🏭 HUNT</h1>
+                <p className="text-xs text-gray-500 mt-1">需要予測システム</p>
               </div>
-              <nav className="flex flex-col space-y-1">
-                <Link href="/" className="px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
-                  ホーム
-                </Link>
-                <Link href="/dashboard" className="px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
-                  📊 ダッシュボード
-                </Link>
-                <Link href="/analysis" className="px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
-                  ファイル分析
-                </Link>
-                <Link href="/chat" className="px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
-                  AIチャット
-                </Link>
+              
+              <nav className="flex-1 p-4 space-y-6">
+                {/* ホーム */}
+                <div>
+                  <Link href="/" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
+                    <span className="mr-2">🏠</span>
+                    ホーム
+                  </Link>
+                </div>
+
+                {/* 分析セクション */}
+                <div>
+                  <div className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    分析
+                  </div>
+                  <Link href="/dashboard" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
+                    <span className="mr-2">📊</span>
+                    ダッシュボード
+                  </Link>
+                  <Link href="/weekly-analysis" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
+                    <span className="mr-2">📆</span>
+                    週次分析
+                  </Link>
+                  <Link href="/analysis" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
+                    <span className="mr-2">📁</span>
+                    ファイル分析
+                  </Link>
+                </div>
+
+                {/* AIセクション */}
+                <div>
+                  <div className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    AI機能
+                  </div>
+                  <Link href="/chat" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
+                    <span className="mr-2">💬</span>
+                    AIチャット
+                  </Link>
+                </div>
+
+                {/* 設定セクション */}
+                <div>
+                  <div className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    管理
+                  </div>
+                  <Link href="/settings" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
+                    <span className="mr-2">⚙️</span>
+                    設定
+                  </Link>
+                </div>
               </nav>
+
+              {/* フッター */}
+              <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="text-xs text-gray-500 text-center">
+                  <p>toB製造業向け</p>
+                  <p className="mt-1">v1.0.0</p>
+                </div>
+              </div>
             </aside>
 
             {/* Main Content */}

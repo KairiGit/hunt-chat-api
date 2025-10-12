@@ -752,3 +752,179 @@ func (ah *AIHandler) DetectAnomaliesInSales(c *gin.Context) {
 		Message:   fmt.Sprintf("%d 件の異常を検出しました", len(anomalies)),
 	})
 }
+
+// ForecastProductDemand 製品別需要予測
+func (ah *AIHandler) ForecastProductDemand(c *gin.Context) {
+	var req models.ProductForecastRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "リクエストパラメータが不正です: " + err.Error(),
+		})
+		return
+	}
+
+	// デフォルト値設定
+	if req.Period == "" {
+		req.Period = "week"
+	}
+	if req.RegionCode == "" {
+		req.RegionCode = "240000" // デフォルト: 三重県
+	}
+
+	// サンプルデータを生成（実際の実装ではQdrantや外部DBから取得）
+	// TODO: アップロードされたファイルデータを使用
+	historicalData := ah.generateSampleHistoricalData(req.ProductID, 90)
+
+	// 需要予測を実行
+	forecast, err := ah.statisticsService.ForecastProductDemand(
+		req.ProductID,
+		req.ProductName,
+		historicalData,
+		req.Period,
+		req.RegionCode,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "需要予測の計算に失敗しました: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.ProductForecastResponse{
+		Success:  true,
+		Forecast: forecast,
+		Message:  fmt.Sprintf("製品 %s の %s 予測が完了しました", req.ProductName, req.Period),
+	})
+}
+
+// AnalyzeWeeklySales 週次売上分析
+func (ah *AIHandler) AnalyzeWeeklySales(c *gin.Context) {
+	var req models.WeeklyAnalysisRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "リクエストパラメータが不正です: " + err.Error(),
+		})
+		return
+	}
+
+	// 日付をパース
+	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "開始日の形式が不正です（YYYY-MM-DD形式で指定してください）",
+		})
+		return
+	}
+
+	endDate, err := time.Parse("2006-01-02", req.EndDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "終了日の形式が不正です（YYYY-MM-DD形式で指定してください）",
+		})
+		return
+	}
+
+	// 販売データが提供されていない場合はサンプルデータを生成
+	salesData := req.SalesData
+	if len(salesData) == 0 {
+		// サンプルデータを生成（実際の実装ではDBから取得）
+		days := int(endDate.Sub(startDate).Hours() / 24)
+		salesData = ah.generateSampleHistoricalData(req.ProductID, days)
+	}
+
+	// 製品名を取得（簡易版：実際はDBから取得）
+	productName := ah.getProductName(req.ProductID)
+
+	// 週次分析を実行
+	analysis, err := ah.statisticsService.AnalyzeWeeklySales(
+		req.ProductID,
+		productName,
+		salesData,
+		startDate,
+		endDate,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "週次分析の実行に失敗しました: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    analysis,
+		"message": fmt.Sprintf("%d週間の分析が完了しました", analysis.TotalWeeks),
+	})
+}
+
+// getProductName 製品IDから製品名を取得（簡易版）
+func (ah *AIHandler) getProductName(productID string) string {
+	productNames := map[string]string{
+		"P001": "製品A",
+		"P002": "製品B",
+		"P003": "製品C",
+		"P004": "製品D",
+		"P005": "製品E",
+	}
+	
+	if name, exists := productNames[productID]; exists {
+		return name
+	}
+	return "不明な製品"
+}
+
+// generateSampleHistoricalData サンプルの履歴データを生成（テスト用）
+func (ah *AIHandler) generateSampleHistoricalData(productID string, days int) []models.SalesDataPoint {
+	data := make([]models.SalesDataPoint, days)
+	baseDate := time.Now().AddDate(0, 0, -days)
+	baseSales := 100.0
+
+	for i := 0; i < days; i++ {
+		date := baseDate.AddDate(0, 0, i)
+		dayOfWeek := []string{"日", "月", "火", "水", "木", "金", "土"}[date.Weekday()]
+
+		// 曜日効果
+		weekdayMultiplier := 1.0
+		switch date.Weekday() {
+		case time.Saturday, time.Sunday:
+			weekdayMultiplier = 1.3 // 週末は30%増
+		case time.Friday:
+			weekdayMultiplier = 1.15 // 金曜は15%増
+		}
+
+		// 季節効果
+		seasonalMultiplier := 1.0
+		month := date.Month()
+		if month >= 6 && month <= 8 {
+			seasonalMultiplier = 1.2 // 夏は20%増
+		} else if month == 12 || month <= 2 {
+			seasonalMultiplier = 0.9 // 冬は10%減
+		}
+
+		// トレンド効果（徐々に増加）
+		trendEffect := 1.0 + (float64(i) / float64(days) * 0.1)
+
+		// ランダムノイズ
+		noise := 1.0 + (float64(i%10)-5)/50.0
+
+		sales := baseSales * weekdayMultiplier * seasonalMultiplier * trendEffect * noise
+
+		data[i] = models.SalesDataPoint{
+			Date:        date.Format("2006-01-02"),
+			Sales:       sales,
+			Temperature: 15.0 + float64(month)*1.5 + float64(i%10-5)*0.5,
+			DayOfWeek:   dayOfWeek,
+		}
+	}
+
+	return data
+}
+
