@@ -874,7 +874,7 @@ func (ah *AIHandler) getProductName(productID string) string {
 		"P004": "製品D",
 		"P005": "製品E",
 	}
-	
+
 	if name, exists := productNames[productID]; exists {
 		return name
 	}
@@ -927,4 +927,3 @@ func (ah *AIHandler) generateSampleHistoricalData(productID string, days int) []
 
 	return data
 }
-
