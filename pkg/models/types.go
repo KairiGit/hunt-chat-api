@@ -277,3 +277,58 @@ type WeeklyTrends struct {
 	LowWeek       int     `json:"low_week"`
 	AverageGrowth float64 `json:"average_growth"` // Average week-over-week %
 }
+
+// AnomalyResponse represents a user's response to an AI question about an anomaly
+type AnomalyResponse struct {
+	ResponseID  string   `json:"response_id"`  // Unique ID for this response
+	AnomalyDate string   `json:"anomaly_date"` // Date of the anomaly
+	ProductID   string   `json:"product_id"`
+	Question    string   `json:"question"`     // The AI's question
+	Answer      string   `json:"answer"`       // User's answer
+	AnswerType  string   `json:"answer_type"`  // "text", "select", "yes_no"
+	Tags        []string `json:"tags"`         // Categories: "campaign", "weather", "event", etc.
+	Impact      string   `json:"impact"`       // "positive", "negative", "neutral"
+	ImpactValue float64  `json:"impact_value"` // Estimated % impact
+	Timestamp   string   `json:"timestamp"`
+	UserID      string   `json:"user_id,omitempty"`
+}
+
+// AnomalyResponseRequest represents a request to save a user's response
+type AnomalyResponseRequest struct {
+	AnomalyDate string   `json:"anomaly_date" binding:"required"`
+	ProductID   string   `json:"product_id" binding:"required"`
+	Question    string   `json:"question" binding:"required"`
+	Answer      string   `json:"answer" binding:"required"`
+	AnswerType  string   `json:"answer_type"` // "text", "select", "yes_no"
+	Tags        []string `json:"tags"`
+	Impact      string   `json:"impact"`       // "positive", "negative", "neutral"
+	ImpactValue float64  `json:"impact_value"` // Estimated % impact
+}
+
+// AnomalyResponseHistory represents the history of responses
+type AnomalyResponseHistory struct {
+	Success   bool              `json:"success"`
+	Responses []AnomalyResponse `json:"responses"`
+	Total     int               `json:"total"`
+	Message   string            `json:"message,omitempty"`
+}
+
+// LearningInsight represents AI-learned insights from past responses
+type LearningInsight struct {
+	InsightID     string   `json:"insight_id"`
+	Category      string   `json:"category"`       // "campaign", "weather", "event", etc.
+	Pattern       string   `json:"pattern"`        // Description of the pattern
+	Examples      []string `json:"examples"`       // Example dates/events
+	AverageImpact float64  `json:"average_impact"` // Average % impact
+	Confidence    float64  `json:"confidence"`     // 0-1
+	LearnedFrom   int      `json:"learned_from"`   // Number of responses
+	LastUpdated   string   `json:"last_updated"`
+}
+
+// LearningInsightsResponse represents AI's learned insights
+type LearningInsightsResponse struct {
+	Success  bool              `json:"success"`
+	Insights []LearningInsight `json:"insights"`
+	Total    int               `json:"total"`
+	Message  string            `json:"message,omitempty"`
+}

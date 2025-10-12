@@ -137,6 +137,9 @@ func main() {
 			ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales) // 異常検知API
 			ai.POST("/forecast-product", aiHandler.ForecastProductDemand)  // 製品別需要予測API
 			ai.POST("/analyze-weekly", aiHandler.AnalyzeWeeklySales)       // 週次分析API
+			ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)    // 異常への回答保存API
+			ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)    // 回答履歴取得API
+			ai.GET("/learning-insights", aiHandler.GetLearningInsights)    // AI学習洞察取得API
 		}
 	}
 

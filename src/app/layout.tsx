@@ -76,6 +76,10 @@ export default function RootLayout({
                     <span className="mr-2">💬</span>
                     AIチャット
                   </Link>
+                  <Link href="/learning" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
+                    <span className="mr-2">🧠</span>
+                    AI学習
+                  </Link>
                 </div>
 
                 {/* 設定セクション */}

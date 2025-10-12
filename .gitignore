@@ -45,3 +45,7 @@ storybook-static
 
 
 /moc
+
+# Qdrant storage
+qdrant_storage/
+*.qdrant

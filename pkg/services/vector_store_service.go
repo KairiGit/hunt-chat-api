@@ -17,8 +17,9 @@ import (
 
 // VectorStoreService はQdrantとのやり取りを管理します
 type VectorStoreService struct {
-	qdrantClient       qdrant.PointsClient
-	azureOpenAIService *AzureOpenAIService
+	qdrantClient            qdrant.PointsClient
+	qdrantCollectionsClient qdrant.CollectionsClient
+	azureOpenAIService      *AzureOpenAIService
 }
 
 // NewVectorStoreService は新しいVectorStoreServiceを初期化して返します
@@ -113,8 +114,9 @@ func NewVectorStoreService(azureOpenAIService *AzureOpenAIService, qdrantURL str
 	}
 
 	return &VectorStoreService{
-		qdrantClient:       qdrantPointsClient,
-		azureOpenAIService: azureOpenAIService,
+		qdrantClient:            qdrantPointsClient,
+		qdrantCollectionsClient: qdrantCollectionsClient,
+		azureOpenAIService:      azureOpenAIService,
 	}
 }
 
@@ -271,4 +273,154 @@ func (s *VectorStoreService) SearchAnalysisReports(ctx context.Context, query st
 
 	log.Printf("分析レポート検索: '%s' に類似した %d 件を取得", query, len(searchResult.GetResult()))
 	return searchResult.GetResult(), nil
+}
+
+// StoreDocument は指定されたコレクションにドキュメントを保存（コレクション名を指定可能）
+func (s *VectorStoreService) StoreDocument(ctx context.Context, collectionName string, documentID string, text string, metadata map[string]interface{}) error {
+	// コレクションが存在するか確認し、なければ作成
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return fmt.Errorf("コレクションの準備に失敗: %w", err)
+	}
+
+	// 1. テキストをベクトル化
+	vector, err := s.azureOpenAIService.CreateEmbedding(ctx, text)
+	if err != nil {
+		return fmt.Errorf("テキストのベクトル化に失敗: %w", err)
+	}
+
+	// 2. Qdrantのペイロードを作成
+	payload := make(map[string]*qdrant.Value)
+	for key, value := range metadata {
+		switch v := value.(type) {
+		case string:
+			payload[key] = &qdrant.Value{Kind: &qdrant.Value_StringValue{StringValue: v}}
+		case int:
+			payload[key] = &qdrant.Value{Kind: &qdrant.Value_IntegerValue{IntegerValue: int64(v)}}
+		case int64:
+			payload[key] = &qdrant.Value{Kind: &qdrant.Value_IntegerValue{IntegerValue: v}}
+		case float64:
+			payload[key] = &qdrant.Value{Kind: &qdrant.Value_DoubleValue{DoubleValue: v}}
+		case bool:
+			payload[key] = &qdrant.Value{Kind: &qdrant.Value_BoolValue{BoolValue: v}}
+		}
+	}
+	// 元のテキストもペイロードに含める
+	payload["text"] = &qdrant.Value{
+		Kind: &qdrant.Value_StringValue{StringValue: text},
+	}
+
+	// 3. Qdrantに保存するPointを作成
+	points := []*qdrant.PointStruct{
+		{
+			Id: &qdrant.PointId{
+				PointIdOptions: &qdrant.PointId_Uuid{Uuid: documentID},
+			},
+			Vectors: &qdrant.Vectors{
+				VectorsOptions: &qdrant.Vectors_Vector{
+					Vector: &qdrant.Vector{
+						Data: vector,
+					},
+				},
+			},
+			Payload: payload,
+		},
+	}
+
+	// 4. QdrantにUpsert
+	waitUpsert := true
+	_, err = s.qdrantClient.Upsert(ctx, &qdrant.UpsertPoints{
+		CollectionName: collectionName,
+		Points:         points,
+		Wait:           &waitUpsert,
+	})
+
+	if err != nil {
+		return fmt.Errorf("Qdrantへのドキュメント保存に失敗: %w", err)
+	}
+
+	log.Printf("ドキュメント '%s' をコレクション '%s' に保存しました。", documentID, collectionName)
+	return nil
+}
+
+// SearchWithFilter はフィルタ条件付きで検索
+func (s *VectorStoreService) SearchWithFilter(ctx context.Context, collectionName string, queryText string, topK uint64, filter *qdrant.Filter) ([]*qdrant.ScoredPoint, error) {
+	// コレクションの存在を確認
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return nil, fmt.Errorf("コレクションの確認に失敗: %w", err)
+	}
+
+	// 1. クエリテキストをベクトル化
+	queryVector, err := s.azureOpenAIService.CreateEmbedding(ctx, queryText)
+	if err != nil {
+		return nil, fmt.Errorf("クエリテキストのベクトル化に失敗: %w", err)
+	}
+
+	// 2. Qdrantで類似ベクトルを検索（フィルタ付き）
+	withPayload := true
+	searchResult, err := s.qdrantClient.Search(ctx, &qdrant.SearchPoints{
+		CollectionName: collectionName,
+		Vector:         queryVector,
+		Limit:          topK,
+		Filter:         filter,
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Qdrantでのフィルタ付き検索に失敗: %w", err)
+	}
+
+	log.Printf("コレクション '%s' でフィルタ付き検索: %d 件取得", collectionName, len(searchResult.GetResult()))
+	return searchResult.GetResult(), nil
+}
+
+// ensureCollection コレクションが存在することを確認し、なければ作成
+func (s *VectorStoreService) ensureCollection(ctx context.Context, collectionName string) error {
+	log.Printf("コレクション '%s' の存在を確認中...", collectionName)
+
+	// コレクションのリストを取得
+	listCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	res, err := s.qdrantCollectionsClient.List(listCtx, &qdrant.ListCollectionsRequest{})
+	if err != nil {
+		log.Printf("警告: コレクションリストの取得に失敗（続行します）: %v", err)
+		return nil // エラーでも続行（既存の場合はUpsert時に成功する）
+	}
+
+	// コレクションが存在するか確認
+	collectionExists := false
+	for _, collection := range res.GetCollections() {
+		if collection.GetName() == collectionName {
+			collectionExists = true
+			break
+		}
+	}
+
+	// 存在しない場合は作成
+	if !collectionExists {
+		log.Printf("コレクション '%s' を作成します...", collectionName)
+		createCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		vectorSize := uint64(1536) // text-embedding-3-smallの次元数
+		_, err = s.qdrantCollectionsClient.Create(createCtx, &qdrant.CreateCollection{
+			CollectionName: collectionName,
+			VectorsConfig: &qdrant.VectorsConfig{
+				Config: &qdrant.VectorsConfig_Params{
+					Params: &qdrant.VectorParams{
+						Size:     vectorSize,
+						Distance: qdrant.Distance_Cosine,
+					},
+				},
+			},
+		})
+		if err != nil {
+			log.Printf("警告: コレクション作成に失敗（続行します）: %v", err)
+			return nil // エラーでも続行
+		}
+		log.Printf("コレクション '%s' を作成しました", collectionName)
+	} else {
+		log.Printf("コレクション '%s' は既に存在します", collectionName)
+	}
+
+	return nil
 }

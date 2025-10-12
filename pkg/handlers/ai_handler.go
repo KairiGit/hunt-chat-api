@@ -18,6 +18,7 @@ import (
 	"hunt-chat-api/pkg/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/qdrant/go-client/qdrant"
 	"github.com/xuri/excelize/v2"
 )
@@ -926,4 +927,369 @@ func (ah *AIHandler) generateSampleHistoricalData(productID string, days int) []
 	}
 
 	return data
+}
+
+// SaveAnomalyResponse ユーザーの異常に対する回答を保存
+func (ah *AIHandler) SaveAnomalyResponse(c *gin.Context) {
+	var req models.AnomalyResponseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "リクエストパラメータが不正です: " + err.Error(),
+		})
+		return
+	}
+
+	// UUID v4を生成
+	responseID := uuid.New().String()
+
+	response := models.AnomalyResponse{
+		ResponseID:  responseID,
+		AnomalyDate: req.AnomalyDate,
+		ProductID:   req.ProductID,
+		Question:    req.Question,
+		Answer:      req.Answer,
+		AnswerType:  req.AnswerType,
+		Tags:        req.Tags,
+		Impact:      req.Impact,
+		ImpactValue: req.ImpactValue,
+		Timestamp:   time.Now().Format(time.RFC3339),
+		UserID:      c.GetString("user_id"), // 認証から取得（未実装の場合は空）
+	}
+
+	// Qdrantに保存
+	if ah.vectorStoreService != nil {
+		// 回答内容をテキストとして構築
+		contentText := fmt.Sprintf(
+			"日付: %s\n製品ID: %s\n質問: %s\n回答: %s\nタグ: %s\n影響: %s (%.1f%%)",
+			response.AnomalyDate,
+			response.ProductID,
+			response.Question,
+			response.Answer,
+			strings.Join(response.Tags, ", "),
+			response.Impact,
+			response.ImpactValue,
+		)
+
+		// メタデータを準備
+		metadata := map[string]interface{}{
+			"type":         "anomaly_response",
+			"response_id":  response.ResponseID,
+			"anomaly_date": response.AnomalyDate,
+			"product_id":   response.ProductID,
+			"tags":         strings.Join(response.Tags, ","),
+			"impact":       response.Impact,
+			"impact_value": response.ImpactValue,
+			"timestamp":    response.Timestamp,
+		}
+
+		// Qdrantに保存
+		err := ah.vectorStoreService.StoreDocument(
+			context.Background(),
+			"anomaly_responses", // コレクション名
+			response.ResponseID,
+			contentText,
+			metadata,
+		)
+
+		if err != nil {
+			log.Printf("Qdrantへの回答保存に失敗: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "回答の保存に失敗しました: " + err.Error(),
+			})
+			return
+		}
+
+		log.Printf("✅ 異常回答を保存しました: %s (製品: %s, 日付: %s)", responseID, req.ProductID, req.AnomalyDate)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":     true,
+		"response_id": responseID,
+		"message":     "回答を保存しました。AIが学習データとして活用します。",
+	})
+}
+
+// GetAnomalyResponses 保存された回答履歴を取得
+func (ah *AIHandler) GetAnomalyResponses(c *gin.Context) {
+	productID := c.Query("product_id")
+	limit := 100 // デフォルト
+
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "ベクトルストアサービスが利用できません",
+		})
+		return
+	}
+
+	// コレクションが存在することを確認
+	collectionName := "anomaly_responses"
+
+	// Qdrantから検索
+	filter := &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			{
+				ConditionOneOf: &qdrant.Condition_Field{
+					Field: &qdrant.FieldCondition{
+						Key: "type",
+						Match: &qdrant.Match{
+							MatchValue: &qdrant.Match_Keyword{
+								Keyword: "anomaly_response",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// 製品IDでフィルタ
+	if productID != "" {
+		filter.Must = append(filter.Must, &qdrant.Condition{
+			ConditionOneOf: &qdrant.Condition_Field{
+				Field: &qdrant.FieldCondition{
+					Key: "product_id",
+					Match: &qdrant.Match{
+						MatchValue: &qdrant.Match_Keyword{
+							Keyword: productID,
+						},
+					},
+				},
+			},
+		})
+	}
+
+	// ダミークエリで検索（フィルタのみ適用）
+	searchResults, err := ah.vectorStoreService.SearchWithFilter(
+		context.Background(),
+		collectionName,
+		"異常", // ダミーテキスト
+		uint64(limit),
+		filter,
+	)
+
+	if err != nil {
+		log.Printf("回答履歴の取得に失敗: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "回答履歴の取得に失敗しました",
+		})
+		return
+	}
+
+	// 結果をAnomalyResponseに変換
+	responses := make([]models.AnomalyResponse, 0)
+	for _, result := range searchResults {
+		if result.Payload == nil {
+			continue
+		}
+
+		response := models.AnomalyResponse{
+			ResponseID:  getStringFromPayload(result.Payload, "response_id"),
+			AnomalyDate: getStringFromPayload(result.Payload, "anomaly_date"),
+			ProductID:   getStringFromPayload(result.Payload, "product_id"),
+			Impact:      getStringFromPayload(result.Payload, "impact"),
+			Timestamp:   getStringFromPayload(result.Payload, "timestamp"),
+		}
+
+		if tagsStr := getStringFromPayload(result.Payload, "tags"); tagsStr != "" {
+			response.Tags = strings.Split(tagsStr, ",")
+		}
+
+		if impactVal := getFloatFromPayload(result.Payload, "impact_value"); impactVal != 0 {
+			response.ImpactValue = impactVal
+		}
+
+		responses = append(responses, response)
+	}
+
+	c.JSON(http.StatusOK, models.AnomalyResponseHistory{
+		Success:   true,
+		Responses: responses,
+		Total:     len(responses),
+		Message:   fmt.Sprintf("%d件の回答履歴を取得しました", len(responses)),
+	})
+}
+
+// GetLearningInsights AIが学習した洞察を取得
+func (ah *AIHandler) GetLearningInsights(c *gin.Context) {
+	category := c.Query("category") // "campaign", "weather", "event", etc.
+
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "ベクトルストアサービスが利用できません",
+		})
+		return
+	}
+
+	// コレクション名を定義
+	collectionName := "anomaly_responses"
+
+	// 回答履歴を取得
+	filter := &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			{
+				ConditionOneOf: &qdrant.Condition_Field{
+					Field: &qdrant.FieldCondition{
+						Key: "type",
+						Match: &qdrant.Match{
+							MatchValue: &qdrant.Match_Keyword{
+								Keyword: "anomaly_response",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	searchResults, err := ah.vectorStoreService.SearchWithFilter(
+		context.Background(),
+		collectionName,
+		"パターン分析",
+		100,
+		filter,
+	)
+
+	if err != nil {
+		log.Printf("学習データの取得に失敗: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "学習データの取得に失敗しました",
+		})
+		return
+	}
+
+	// タグごとに集計
+	tagStats := make(map[string]*struct {
+		count       int
+		totalImpact float64
+		examples    []string
+	})
+
+	for _, result := range searchResults {
+		if result.Payload == nil {
+			continue
+		}
+
+		tagsStr := getStringFromPayload(result.Payload, "tags")
+		impact := getFloatFromPayload(result.Payload, "impact_value")
+		date := getStringFromPayload(result.Payload, "anomaly_date")
+
+		if tagsStr == "" {
+			continue
+		}
+
+		tags := strings.Split(tagsStr, ",")
+		for _, tag := range tags {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+
+			// カテゴリフィルタ
+			if category != "" && tag != category {
+				continue
+			}
+
+			if tagStats[tag] == nil {
+				tagStats[tag] = &struct {
+					count       int
+					totalImpact float64
+					examples    []string
+				}{}
+			}
+
+			tagStats[tag].count++
+			tagStats[tag].totalImpact += impact
+			if len(tagStats[tag].examples) < 3 {
+				tagStats[tag].examples = append(tagStats[tag].examples, date)
+			}
+		}
+	}
+
+	// 洞察を生成
+	insights := make([]models.LearningInsight, 0)
+	insightID := 1
+
+	for tag, stats := range tagStats {
+		if stats.count < 2 {
+			continue // 2件未満はスキップ
+		}
+
+		avgImpact := stats.totalImpact / float64(stats.count)
+		confidence := math.Min(float64(stats.count)/10.0, 1.0) // 10件で信頼度100%
+
+		pattern := ah.generatePatternDescription(tag, avgImpact, stats.count)
+
+		insight := models.LearningInsight{
+			InsightID:     fmt.Sprintf("insight_%d", insightID),
+			Category:      tag,
+			Pattern:       pattern,
+			Examples:      stats.examples,
+			AverageImpact: avgImpact,
+			Confidence:    confidence,
+			LearnedFrom:   stats.count,
+			LastUpdated:   time.Now().Format(time.RFC3339),
+		}
+
+		insights = append(insights, insight)
+		insightID++
+	}
+
+	// 信頼度順にソート
+	sort.Slice(insights, func(i, j int) bool {
+		return insights[i].Confidence > insights[j].Confidence
+	})
+
+	c.JSON(http.StatusOK, models.LearningInsightsResponse{
+		Success:  true,
+		Insights: insights,
+		Total:    len(insights),
+		Message:  fmt.Sprintf("%d件の学習パターンを発見しました", len(insights)),
+	})
+}
+
+// generatePatternDescription パターンの説明を生成
+func (ah *AIHandler) generatePatternDescription(tag string, avgImpact float64, count int) string {
+	impactStr := "影響"
+	if avgImpact > 0 {
+		impactStr = fmt.Sprintf("平均+%.1f%%の需要増加", avgImpact)
+	} else if avgImpact < 0 {
+		impactStr = fmt.Sprintf("平均%.1f%%の需要減少", math.Abs(avgImpact))
+	}
+
+	return fmt.Sprintf("%sが発生した際、%sの傾向があります（%d件の実績から学習）", tag, impactStr, count)
+}
+
+// ヘルパー関数: Payloadから文字列を取得
+func getStringFromPayload(payload map[string]*qdrant.Value, key string) string {
+	if val, ok := payload[key]; ok && val != nil {
+		if strVal := val.GetStringValue(); strVal != "" {
+			return strVal
+		}
+	}
+	return ""
+}
+
+// ヘルパー関数: Payloadから数値を取得
+func getFloatFromPayload(payload map[string]*qdrant.Value, key string) float64 {
+	if val, ok := payload[key]; ok && val != nil {
+		if doubleVal := val.GetDoubleValue(); doubleVal != 0 {
+			return doubleVal
+		}
+		if intVal := val.GetIntegerValue(); intVal != 0 {
+			return float64(intVal)
+		}
+	}
+	return 0
 }
