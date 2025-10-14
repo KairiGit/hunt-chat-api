@@ -15,6 +15,7 @@ export default function AnalysisPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [analysisReport, setAnalysisReport] = useState<AnalysisReport | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -29,6 +30,7 @@ export default function AnalysisPage() {
 
     setIsLoading(true);
     setError(null);
+    setWarning(null);
     setAnalysisSummary('');
     setAnalysisReport(null);
     const formData = new FormData();
@@ -65,8 +67,8 @@ export default function AnalysisPage() {
           setAnalysisReport(result.analysis_report);
         } else {
           // レポートがない場合は警告を表示
+          setWarning('基本的な分析は完了しましたが、詳細レポートの生成に失敗しました。データ量や気象データの取得に問題がある可能性があります。');
           console.warn('分析は成功しましたが、詳細レポートが生成されませんでした');
-          // サマリーは表示されるので、完全なエラーにはしない
         }
       } else {
         throw new Error(result.summary || 'Failed to get analysis summary.');
@@ -111,7 +113,35 @@ export default function AnalysisPage() {
         </Card>
       )}
 
-      {/* 分析レポート表示 */}
+      {warning && (
+        <Card className="max-w-2xl bg-yellow-50 dark:bg-yellow-950 border-yellow-500">
+          <CardHeader>
+            <CardTitle className="text-yellow-700 dark:text-yellow-400">⚠️ 警告</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-yellow-700 dark:text-yellow-300">{warning}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* サマリー表示（レポートがない場合も表示） */}
+      {analysisSummary && !analysisReport && (
+        <Card className="max-w-4xl">
+          <CardHeader>
+            <CardTitle>📊 基本分析結果</CardTitle>
+            <CardDescription>
+              ファイルの基本的な分析が完了しました
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <pre className="whitespace-pre-wrap text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-md overflow-auto max-h-96">
+              {analysisSummary}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 詳細分析レポート表示 */}
       {analysisReport && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
