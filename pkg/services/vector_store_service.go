@@ -3,9 +3,12 @@ package services
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
+
+	"hunt-chat-api/pkg/models"
 
 	"github.com/google/uuid"
 	"github.com/qdrant/go-client/qdrant"
@@ -423,4 +426,171 @@ func (s *VectorStoreService) ensureCollection(ctx context.Context, collectionNam
 	}
 
 	return nil
+}
+
+// SaveChatHistory チャット履歴をQdrantに保存
+func (s *VectorStoreService) SaveChatHistory(ctx context.Context, entry models.ChatHistoryEntry) error {
+	collectionName := "chat_history"
+
+	// エントリーをJSON文字列に変換してテキストベクトル化用に準備
+	entryText := fmt.Sprintf(
+		"Role: %s\nMessage: %s\nContext: %s\nTags: %v\nIntent: %s\nProductID: %s",
+		entry.Role,
+		entry.Message,
+		entry.Context,
+		entry.Tags,
+		entry.Metadata.Intent,
+		entry.Metadata.ProductID,
+	)
+
+	// メタデータを準備
+	metadata := map[string]interface{}{
+		"type":       "chat_history",
+		"session_id": entry.SessionID,
+		"user_id":    entry.UserID,
+		"role":       entry.Role,
+		"timestamp":  entry.Timestamp,
+		"intent":     entry.Metadata.Intent,
+		"product_id": entry.Metadata.ProductID,
+		"date_range": entry.Metadata.DateRange,
+	}
+
+	// タグをJSON文字列として追加
+	if len(entry.Tags) > 0 {
+		tagsJSON, _ := json.Marshal(entry.Tags)
+		metadata["tags"] = string(tagsJSON)
+	}
+
+	// キーワードをJSON文字列として追加
+	if len(entry.Metadata.TopicKeywords) > 0 {
+		keywordsJSON, _ := json.Marshal(entry.Metadata.TopicKeywords)
+		metadata["keywords"] = string(keywordsJSON)
+	}
+
+	// ドキュメントとして保存（既存のStoreDocumentメソッドを活用）
+	return s.StoreDocument(ctx, collectionName, entry.ID, entryText, metadata)
+}
+
+// SearchChatHistory チャット履歴を検索（RAG機能）
+func (s *VectorStoreService) SearchChatHistory(ctx context.Context, query string, sessionID string, userID string, topK uint64) ([]models.ChatHistoryEntry, error) {
+	collectionName := "chat_history"
+
+	// フィルタ条件を構築
+	var filterConditions []*qdrant.Condition
+
+	// typeフィルタは必須
+	filterConditions = append(filterConditions, &qdrant.Condition{
+		ConditionOneOf: &qdrant.Condition_Field{
+			Field: &qdrant.FieldCondition{
+				Key: "type",
+				Match: &qdrant.Match{
+					MatchValue: &qdrant.Match_Keyword{
+						Keyword: "chat_history",
+					},
+				},
+			},
+		},
+	})
+
+	// セッションIDフィルタ（オプション）
+	if sessionID != "" {
+		filterConditions = append(filterConditions, &qdrant.Condition{
+			ConditionOneOf: &qdrant.Condition_Field{
+				Field: &qdrant.FieldCondition{
+					Key: "session_id",
+					Match: &qdrant.Match{
+						MatchValue: &qdrant.Match_Keyword{
+							Keyword: sessionID,
+						},
+					},
+				},
+			},
+		})
+	}
+
+	// ユーザーIDフィルタ（オプション）
+	if userID != "" {
+		filterConditions = append(filterConditions, &qdrant.Condition{
+			ConditionOneOf: &qdrant.Condition_Field{
+				Field: &qdrant.FieldCondition{
+					Key: "user_id",
+					Match: &qdrant.Match{
+						MatchValue: &qdrant.Match_Keyword{
+							Keyword: userID,
+						},
+					},
+				},
+			},
+		})
+	}
+
+	filter := &qdrant.Filter{
+		Must: filterConditions,
+	}
+
+	// ベクトル検索を実行
+	results, err := s.SearchWithFilter(ctx, collectionName, query, topK, filter)
+	if err != nil {
+		return nil, fmt.Errorf("チャット履歴の検索に失敗: %w", err)
+	}
+
+	// 結果を ChatHistoryEntry に変換
+	var entries []models.ChatHistoryEntry
+	for _, result := range results {
+		payload := result.GetPayload()
+
+		entry := models.ChatHistoryEntry{
+			ID:        result.Id.GetUuid(),
+			SessionID: getStringFromPayload(payload, "session_id"),
+			UserID:    getStringFromPayload(payload, "user_id"),
+			Role:      getStringFromPayload(payload, "role"),
+			Message:   getStringFromPayload(payload, "text"), // 元のテキストフィールドから取得
+			Timestamp: getStringFromPayload(payload, "timestamp"),
+			Metadata: models.Metadata{
+				Intent:         getStringFromPayload(payload, "intent"),
+				ProductID:      getStringFromPayload(payload, "product_id"),
+				DateRange:      getStringFromPayload(payload, "date_range"),
+				RelevanceScore: float64(result.GetScore()),
+			},
+		}
+
+		// タグの復元
+		if tagsJSON := getStringFromPayload(payload, "tags"); tagsJSON != "" {
+			var tags []string
+			if err := json.Unmarshal([]byte(tagsJSON), &tags); err == nil {
+				entry.Tags = tags
+			}
+		}
+
+		// キーワードの復元
+		if keywordsJSON := getStringFromPayload(payload, "keywords"); keywordsJSON != "" {
+			var keywords []string
+			if err := json.Unmarshal([]byte(keywordsJSON), &keywords); err == nil {
+				entry.Metadata.TopicKeywords = keywords
+			}
+		}
+
+		entries = append(entries, entry)
+	}
+
+	log.Printf("チャット履歴検索: %d 件の関連する会話を取得しました", len(entries))
+	return entries, nil
+}
+
+// GetRecentChatHistory 最近のチャット履歴を取得（時系列順）
+func (s *VectorStoreService) GetRecentChatHistory(ctx context.Context, sessionID string, limit int) ([]models.ChatHistoryEntry, error) {
+	// この機能は、Qdrantではスコアベースの検索になるため、
+	// 実際には時系列での取得が難しい。代わりにベクトル検索で直近の会話を取得する
+	// 改善案: timestampを使った専用のフィルタリング機能を追加する
+	return s.SearchChatHistory(ctx, "最近の会話", sessionID, "", uint64(limit))
+}
+
+// getStringFromPayload ペイロードから文字列値を取得するヘルパー関数
+func getStringFromPayload(payload map[string]*qdrant.Value, key string) string {
+	if val, ok := payload[key]; ok {
+		if strVal := val.GetStringValue(); strVal != "" {
+			return strVal
+		}
+	}
+	return ""
 }

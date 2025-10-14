@@ -1,16 +1,78 @@
 package models
 
+import "time"
+
 // ChatRequest represents an incoming chat request
 type ChatRequest struct {
-	Message string `json:"message" binding:"required"`
-	Context string `json:"context,omitempty"`
+	Message   string `json:"message" binding:"required"`
+	Context   string `json:"context,omitempty"`
+	SessionID string `json:"session_id,omitempty"` // セッションIDで会話を紐付け
+	UserID    string `json:"user_id,omitempty"`    // ユーザーIDで履歴を管理
 }
 
 // ChatResponse represents the response from the chat API
 type ChatResponse struct {
-	Response  string `json:"response"`
-	Timestamp string `json:"timestamp"`
-	Model     string `json:"model"`
+	Response          string   `json:"response"`
+	Timestamp         string   `json:"timestamp"`
+	Model             string   `json:"model"`
+	SessionID         string   `json:"session_id,omitempty"`
+	RelevantHistory   []string `json:"relevant_history,omitempty"`   // 関連する過去の会話
+	ContextSources    []string `json:"context_sources,omitempty"`    // コンテキストのソース情報
+	ConversationCount int      `json:"conversation_count,omitempty"` // 使用した過去の会話数
+}
+
+// ChatHistoryEntry チャット履歴の1エントリー
+type ChatHistoryEntry struct {
+	ID        string    `json:"id"`         // 一意のID
+	SessionID string    `json:"session_id"` // セッションID（会話のグルーピング）
+	UserID    string    `json:"user_id"`    // ユーザーID
+	Role      string    `json:"role"`       // "user" or "assistant"
+	Message   string    `json:"message"`    // メッセージ内容
+	Context   string    `json:"context"`    // 付随するコンテキスト
+	Timestamp string    `json:"timestamp"`  // タイムスタンプ
+	Tags      []string  `json:"tags"`       // タグ（検索用）
+	Metadata  Metadata  `json:"metadata"`   // メタデータ
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Metadata チャット履歴のメタデータ
+type Metadata struct {
+	Intent         string   `json:"intent,omitempty"`          // 意図（例: "需要予測", "異常分析"）
+	ProductID      string   `json:"product_id,omitempty"`      // 関連商品
+	DateRange      string   `json:"date_range,omitempty"`      // 関連期間
+	TopicKeywords  []string `json:"topic_keywords,omitempty"`  // トピックキーワード
+	SentimentScore float64  `json:"sentiment_score,omitempty"` // 感情スコア
+	RelevanceScore float64  `json:"relevance_score,omitempty"` // 関連性スコア（RAG検索時に設定）
+}
+
+// ChatHistorySaveRequest チャット履歴の保存リクエスト
+type ChatHistorySaveRequest struct {
+	SessionID string   `json:"session_id"`
+	UserID    string   `json:"user_id"`
+	Role      string   `json:"role" binding:"required"`
+	Message   string   `json:"message" binding:"required"`
+	Context   string   `json:"context,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	Metadata  Metadata `json:"metadata,omitempty"`
+}
+
+// ChatHistorySearchRequest チャット履歴の検索リクエスト
+type ChatHistorySearchRequest struct {
+	Query     string   `json:"query" binding:"required"` // 検索クエリ
+	SessionID string   `json:"session_id,omitempty"`     // 特定セッション内で検索
+	UserID    string   `json:"user_id,omitempty"`        // 特定ユーザーの履歴から検索
+	Tags      []string `json:"tags,omitempty"`           // タグフィルター
+	TopK      int      `json:"top_k,omitempty"`          // 取得件数（デフォルト: 5）
+	StartDate string   `json:"start_date,omitempty"`     // 開始日フィルター
+	EndDate   string   `json:"end_date,omitempty"`       // 終了日フィルター
+}
+
+// ChatHistorySearchResponse チャット履歴の検索レスポンス
+type ChatHistorySearchResponse struct {
+	Success bool               `json:"success"`
+	Results []ChatHistoryEntry `json:"results"`
+	Count   int                `json:"count"`
+	Message string             `json:"message,omitempty"`
 }
 
 // DemandForecastRequest represents a demand forecast request

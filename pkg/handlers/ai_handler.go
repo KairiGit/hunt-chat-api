@@ -327,6 +327,8 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 type ChatInputRequest struct {
 	ChatMessage string `json:"chat_message"`
 	Context     string `json:"context,omitempty"`
+	SessionID   string `json:"session_id,omitempty"` // セッションID（会話の継続性）
+	UserID      string `json:"user_id,omitempty"`    // ユーザーID（履歴の紐付け）
 }
 
 func (ah *AIHandler) ChatInput(c *gin.Context) {
@@ -340,38 +342,78 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 		return
 	}
 
+	// セッションIDが指定されていない場合は新規生成
+	if req.SessionID == "" {
+		req.SessionID = uuid.New().String()
+	}
+
 	ctx := c.Request.Context()
 
-	// ユーザーメッセージをベクトルDBに非同期で保存
+	// メタデータを抽出（意図やキーワード）
+	intent, keywords, _ := ah.azureOpenAIService.ExtractMetadataFromMessage(req.ChatMessage)
+
+	// ユーザーメッセージをチャット履歴として保存
+	userEntry := models.ChatHistoryEntry{
+		ID:        uuid.New().String(),
+		SessionID: req.SessionID,
+		UserID:    req.UserID,
+		Role:      "user",
+		Message:   req.ChatMessage,
+		Context:   req.Context,
+		Timestamp: time.Now().Format(time.RFC3339),
+		Tags:      keywords,
+		Metadata: models.Metadata{
+			Intent:        intent,
+			TopicKeywords: keywords,
+		},
+		CreatedAt: time.Now(),
+	}
+
+	// 非同期でチャット履歴を保存
 	go func() {
-		userMetadata := map[string]interface{}{
-			"type":      "user_message",
-			"source":    "chat",
-			"timestamp": time.Now().Format(time.RFC3339),
-		}
-		if err := ah.vectorStoreService.Save(context.Background(), req.ChatMessage, userMetadata); err != nil {
-			log.Printf("ユーザーメッセージのDB保存に失敗: %v", err)
+		if err := ah.vectorStoreService.SaveChatHistory(context.Background(), userEntry); err != nil {
+			log.Printf("ユーザーメッセージの履歴保存に失敗: %v", err)
+		} else {
+			log.Printf("✅ ユーザーメッセージを履歴に保存: SessionID=%s", req.SessionID)
 		}
 	}()
 
-	// RAG: 類似した過去の会話を検索
+	// RAG: 類似した過去の会話を検索（チャット履歴から）
 	var ragContext strings.Builder
+	var relevantHistoryTexts []string
+	var contextSources []string
+
 	if req.Context != "" {
 		ragContext.WriteString(req.Context) // ファイル分析のコンテキストを維持
+		contextSources = append(contextSources, "現在のファイル分析")
 	}
 
-	// 一般的な会話履歴を検索
-	searchResults, err := ah.vectorStoreService.Search(ctx, req.ChatMessage, 1)
+	// 🔍 過去のチャット履歴から関連する会話を検索
+	chatHistory, err := ah.vectorStoreService.SearchChatHistory(ctx, req.ChatMessage, "", req.UserID, 3)
+	if err != nil {
+		log.Printf("チャット履歴検索に失敗: %v", err)
+	} else if len(chatHistory) > 0 {
+		ragContext.WriteString("\n\n## 過去の関連する会話履歴:\n")
+		for i, entry := range chatHistory {
+			historyText := fmt.Sprintf("[%s] %s: %s", entry.Timestamp, entry.Role, entry.Message)
+			relevantHistoryTexts = append(relevantHistoryTexts, historyText)
+			ragContext.WriteString(fmt.Sprintf("%d. %s (関連度: %.2f)\n", i+1, historyText, entry.Metadata.RelevanceScore))
+			contextSources = append(contextSources, fmt.Sprintf("過去の会話 (%s)", entry.Timestamp))
+		}
+		log.Printf("📚 %d件の関連する過去の会話を取得しました", len(chatHistory))
+	}
+
+	// 一般的なドキュメント検索（hunt_chat_documentsから）
+	searchResults, err := ah.vectorStoreService.Search(ctx, req.ChatMessage, 2)
 	if err != nil {
 		log.Printf("ベクトル検索に失敗: %v", err)
-		// 検索に失敗しても処理は続行
 	} else if len(searchResults) > 0 {
-		ragContext.WriteString("\n\n## 類似した過去の会話:\n")
+		ragContext.WriteString("\n\n## 関連するドキュメント:\n")
 		for _, point := range searchResults {
-			// ペイロードから元のテキストを取得
 			if textPayload, ok := point.Payload["text"]; ok {
 				if text, ok := textPayload.GetKind().(*qdrant.Value_StringValue); ok {
 					ragContext.WriteString(fmt.Sprintf("- %s (類似度: %.2f)\n", text.StringValue, point.Score))
+					contextSources = append(contextSources, "ナレッジベース")
 				}
 			}
 		}
@@ -391,7 +433,6 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 			for _, point := range analysisResults {
 				if textPayload, ok := point.Payload["text"]; ok {
 					if text, ok := textPayload.GetKind().(*qdrant.Value_StringValue); ok {
-						// JSONをパースして読みやすく整形
 						var report models.AnalysisReport
 						if json.Unmarshal([]byte(text.StringValue), &report) == nil {
 							ragContext.WriteString(fmt.Sprintf("\n### レポート: %s\n", report.FileName))
@@ -408,10 +449,7 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 							if report.Regression != nil {
 								ragContext.WriteString(fmt.Sprintf("- 回帰分析: %s\n", report.Regression.Description))
 							}
-						} else {
-							// パース失敗時は生テキストの一部を表示
-							ragContext.WriteString(fmt.Sprintf("- %s (類似度: %.2f)\n",
-								text.StringValue[:min(200, len(text.StringValue))], point.Score))
+							contextSources = append(contextSources, fmt.Sprintf("分析レポート (%s)", report.FileName))
 						}
 					}
 				}
@@ -419,27 +457,55 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 		}
 	}
 
-	// AIに応答を生成させる
-	aiResponse, err := ah.azureOpenAIService.ProcessChatWithContext(req.ChatMessage, ragContext.String())
+	// 🤖 AIに応答を生成させる（過去の履歴を活用）
+	aiResponse, err := ah.azureOpenAIService.ProcessChatWithHistory(
+		req.ChatMessage,
+		ragContext.String(),
+		relevantHistoryTexts,
+	)
 	if err != nil {
 		log.Printf("AI処理エラー詳細: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI処理中にエラーが発生しました: " + err.Error()})
 		return
 	}
 
-	// AIの応答をベクトルDBに非同期で保存
+	// AIの応答をチャット履歴として保存
+	assistantEntry := models.ChatHistoryEntry{
+		ID:        uuid.New().String(),
+		SessionID: req.SessionID,
+		UserID:    req.UserID,
+		Role:      "assistant",
+		Message:   aiResponse,
+		Context:   req.Context,
+		Timestamp: time.Now().Format(time.RFC3339),
+		Tags:      keywords,
+		Metadata: models.Metadata{
+			Intent:        intent,
+			TopicKeywords: keywords,
+		},
+		CreatedAt: time.Now(),
+	}
+
+	// 非同期でAI応答を履歴に保存
 	go func() {
-		aiMetadata := map[string]interface{}{
-			"type":      "ai_response",
-			"source":    "chat",
-			"timestamp": time.Now().Format(time.RFC3339),
-		}
-		if err := ah.vectorStoreService.Save(context.Background(), aiResponse, aiMetadata); err != nil {
-			log.Printf("AI応答のDB保存に失敗: %v", err)
+		if err := ah.vectorStoreService.SaveChatHistory(context.Background(), assistantEntry); err != nil {
+			log.Printf("AI応答の履歴保存に失敗: %v", err)
+		} else {
+			log.Printf("✅ AI応答を履歴に保存: SessionID=%s", req.SessionID)
 		}
 	}()
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "response": gin.H{"text": aiResponse}})
+	// レスポンスを返す（履歴情報を含む）
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"response": gin.H{
+			"text":               aiResponse,
+			"session_id":         req.SessionID,
+			"relevant_history":   relevantHistoryTexts,
+			"context_sources":    contextSources,
+			"conversation_count": len(chatHistory),
+		},
+	})
 }
 
 type AnalyzeWeatherDataRequest struct {
