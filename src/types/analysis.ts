@@ -26,13 +26,14 @@ export interface AnalysisReport {
   weather_matches: number;
   summary: string;
   correlations: CorrelationResult[];
-  regression: RegressionResult;
+  regression: RegressionResult | null; // nullを許容
   ai_insights: string;
   recommendations: string[];
 }
 
 export interface AnalysisResponse {
-  analysis_report: AnalysisReport;
+  analysis_report?: AnalysisReport; // オプショナルに変更
   success: boolean;
   summary: string;
+  error?: string; // エラーメッセージを追加
 }

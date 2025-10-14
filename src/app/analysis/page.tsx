@@ -50,9 +50,24 @@ export default function AnalysisPage() {
       }
 
       const result: AnalysisResponse = await response.json();
-      if (result.success && result.analysis_report) {
-        setAnalysisSummary(result.summary);
-        setAnalysisReport(result.analysis_report);
+      
+      // エラーメッセージがある場合
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      
+      // 成功時の処理
+      if (result.success) {
+        setAnalysisSummary(result.summary || '');
+        
+        // analysis_reportがある場合のみ設定
+        if (result.analysis_report) {
+          setAnalysisReport(result.analysis_report);
+        } else {
+          // レポートがない場合は警告を表示
+          console.warn('分析は成功しましたが、詳細レポートが生成されませんでした');
+          // サマリーは表示されるので、完全なエラーにはしない
+        }
       } else {
         throw new Error(result.summary || 'Failed to get analysis summary.');
       }

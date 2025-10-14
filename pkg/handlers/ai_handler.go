@@ -259,17 +259,36 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			log.Printf("📅 販売データの最初の日付: %s, 最後の日付: %s", salesData[0].Date, salesData[len(salesData)-1].Date)
 		}
 
-		// AI分析を呼び出し
-		aiInsights, aiErr := ah.azureOpenAIService.ProcessChatWithContext(
-			"以下の販売データを分析して、需要予測に役立つ洞察を提供してください。",
-			summary.String(),
-		)
-		if aiErr != nil {
-			aiInsights = "AI分析は利用できませんでした。"
-			log.Printf("AI分析エラー: %v", aiErr)
+		// statisticsServiceが初期化されているか確認
+		if ah.statisticsService == nil {
+			log.Printf("❌ StatisticsService が初期化されていません")
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"summary": summary.String(),
+				"error":   "統計分析サービスが利用できません",
+			})
+			return
 		}
 
-		// 統計レポート作成
+		// AI分析を呼び出し（エラーハンドリング強化）
+		var aiInsights string
+		if ah.azureOpenAIService != nil {
+			insights, aiErr := ah.azureOpenAIService.ProcessChatWithContext(
+				"以下の販売データを分析して、需要予測に役立つ洞察を提供してください。",
+				summary.String(),
+			)
+			if aiErr != nil {
+				aiInsights = "AI分析は利用できませんでした。"
+				log.Printf("⚠️ AI分析エラー: %v", aiErr)
+			} else {
+				aiInsights = insights
+			}
+		} else {
+			aiInsights = "AIサービスが初期化されていません。"
+			log.Printf("⚠️ AIサービスが nil です")
+		}
+
+		// 統計レポート作成（エラーハンドリング強化）
 		report, err := ah.statisticsService.CreateAnalysisReport(
 			fileName,
 			salesData,
@@ -277,7 +296,14 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			aiInsights,
 		)
 		if err != nil {
-			log.Printf("統計レポート作成エラー: %v", err)
+			log.Printf("❌ 統計レポート作成エラー: %v", err)
+			// エラーが発生してもサマリーは返す
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"summary": summary.String(),
+				"error":   fmt.Sprintf("統計分析でエラーが発生しました: %v", err),
+			})
+			return
 		} else {
 			analysisReport = report
 
