@@ -25,6 +25,7 @@ export default function Home() {
   const [analysisSummary, setAnalysisSummary] = useState<string>('');
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisWarning, setAnalysisWarning] = useState<string | null>(null);
   const analysisFileRef = useRef<HTMLInputElement>(null);
 
   // Chat State
@@ -83,6 +84,7 @@ export default function Home() {
     if (!selectedFileForAnalysis) return;
     setAnalysisLoading(true);
     setAnalysisError(null);
+    setAnalysisWarning(null);
     setAnalysisSummary('');
     const formData = new FormData();
     formData.append('file', selectedFileForAnalysis);
@@ -100,6 +102,14 @@ export default function Home() {
       const result = await response.json();
       if (result.success) {
         setAnalysisSummary(result.summary);
+        
+        // 詳細レポートがない場合は警告を表示
+        if (!result.analysis_report) {
+          const warningMessage = result.error 
+            ? `基本分析は完了しましたが、詳細レポート生成に失敗: ${result.error}`
+            : '基本分析は完了しましたが、詳細レポートは生成されませんでした。';
+          setAnalysisWarning(warningMessage);
+        }
       } else {
         throw new Error(result.error || 'Failed to get analysis summary.');
       }
@@ -209,6 +219,7 @@ export default function Home() {
               </button>
             </div>
             {analysisError && <div className="mt-4 p-3 bg-red-100 text-red-800 border border-red-300 rounded-lg"><p className="font-bold">分析エラー:</p><p>{analysisError}</p></div>}
+            {analysisWarning && <div className="mt-4 p-3 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded-lg"><p className="font-bold">⚠️ 注意:</p><p>{analysisWarning}</p></div>}
             {analysisSummary && (
               <div className="mt-4">
                 <h3 className="font-bold mb-2">分析サマリー</h3>

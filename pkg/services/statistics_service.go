@@ -406,6 +406,14 @@ func (s *StatisticsService) CreateAnalysisReport(
 
 		log.Printf("📊 販売データ件数: %d, 気象データマップサイズ: %d", len(salesData), len(weatherMap))
 
+		// 日付形式の診断ログを追加
+		if len(salesData) > 0 {
+			log.Printf("🔍 [診断] 販売データの日付例: '%s'", salesData[0].Date)
+		}
+		if len(weatherData) > 0 {
+			log.Printf("🔍 [診断] 気象データの日付例: '%s'", weatherData[0].Date)
+		}
+
 		for _, sale := range salesData {
 			if temp, ok := weatherMap[sale.Date]; ok {
 				temps = append(temps, temp)
