@@ -55,6 +55,14 @@ func findIndex(slice []string, candidates ...string) int {
 	return -1
 }
 
+// min returns the smaller of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // AnalyzeFile: Logic-based file analysis with monthly aggregation
 func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	c.Request.ParseMultipartForm(10 << 20) // 10MB limit
@@ -101,7 +109,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	dataRows := rows[1:]
 
 	dateColIdx := findIndex(header, "date", "日付")
-	productColIdx := findIndex(header, "product", "product_id", "商品", "商品ID", "製品", "製品ID")
+	productColIdx := findIndex(header, "product", "product_id", "商品", "商品ID", "製品", "製品名", "製品ID")
 	salesColIdx := findIndex(header, "sales", "quantity", "販売数", "数量")
 
 	var missingCols []string
@@ -212,82 +220,26 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	// === 目標① 統計分析の実行 ===
 	// 販売データを WeatherSalesData 形式に変換
 	var salesData []models.WeatherSalesData
-	var parseErrors []string
-	successfulParse := 0
-
-	log.Printf("🔍 CSV解析開始: 総行数=%d, dateCol=%d, productCol=%d, salesCol=%d", len(dataRows), dateColIdx, productColIdx, salesColIdx)
-
-	// 最初の数行の生データをログに出力
-	for i := 0; i < int(math.Min(3, float64(len(dataRows)))); i++ {
-		if len(dataRows[i]) > 0 {
-			log.Printf("  📋 行%d (生データ): %v", i+1, dataRows[i])
-		}
-	}
-
-	for rowIdx, row := range dataRows {
+	for _, row := range dataRows {
 		if len(row) > dateColIdx && len(row) > productColIdx && len(row) > salesColIdx {
-			dateStr := strings.TrimSpace(row[dateColIdx])
-			product := strings.TrimSpace(row[productColIdx])
-			salesStr := strings.TrimSpace(row[salesColIdx])
-
-			// デバッグ: 最初の数行を詳細ログ
-			if rowIdx < 3 {
-				log.Printf("  🔎 行%d 解析中: date='%s', product='%s', sales='%s'", rowIdx+1, dateStr, product, salesStr)
-			}
+			dateStr := row[dateColIdx]
+			product := row[productColIdx]
+			salesStr := row[salesColIdx]
 
 			var t time.Time
 			t, _ = time.Parse("2006-01-02", dateStr)
 			if t == (time.Time{}) {
 				t, _ = time.Parse("2006/1/2", dateStr)
-				if t == (time.Time{}) {
-					t, _ = time.Parse("2006/01/02", dateStr)
-				}
 			}
 
 			sales, convErr := strconv.ParseFloat(salesStr, 64)
-
-			// 解析失敗時のログ
-			if product == "" || t == (time.Time{}) || convErr != nil {
-				if rowIdx < 5 { // 最初の5行のみ詳細エラーを記録
-					errorMsg := fmt.Sprintf("行%d: ", rowIdx+1)
-					if product == "" {
-						errorMsg += "製品ID空, "
-					}
-					if t == (time.Time{}) {
-						errorMsg += fmt.Sprintf("日付解析失敗('%s'), ", dateStr)
-					}
-					if convErr != nil {
-						errorMsg += fmt.Sprintf("売上変換失敗('%s': %v), ", salesStr, convErr)
-					}
-					parseErrors = append(parseErrors, errorMsg)
-				}
-				continue
+			if product != "" && t != (time.Time{}) && convErr == nil {
+				salesData = append(salesData, models.WeatherSalesData{
+					Date:      t.Format("2006-01-02"),
+					ProductID: product,
+					Sales:     sales,
+				})
 			}
-
-			salesData = append(salesData, models.WeatherSalesData{
-				Date:      t.Format("2006-01-02"),
-				ProductID: product,
-				Sales:     sales,
-			})
-			successfulParse++
-
-			// 最初の成功例をログ
-			if successfulParse == 1 {
-				log.Printf("  ✅ 初回成功: date=%s, product=%s, sales=%.2f", t.Format("2006-01-02"), product, sales)
-			}
-		} else {
-			if rowIdx < 5 {
-				parseErrors = append(parseErrors, fmt.Sprintf("行%d: 列数不足 (len=%d, 必要: date=%d, product=%d, sales=%d)",
-					rowIdx+1, len(row), dateColIdx, productColIdx, salesColIdx))
-			}
-		}
-	}
-
-	log.Printf("📊 CSV解析結果: 成功=%d件, 失敗=%d件", successfulParse, len(dataRows)-successfulParse)
-	if len(parseErrors) > 0 {
-		log.Printf("⚠️ 解析エラー例 (最大5件):")
-		for _, errMsg := range parseErrors {
-			log.Printf("   %s", errMsg)
 		}
 	}
 
@@ -302,7 +254,6 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	// 統計分析を実行
 	var analysisReport *models.AnalysisReport
 	if len(salesData) > 0 {
-		log.Printf("✅ 販売データが存在します: %d件", len(salesData))
 		// 日付範囲を確認
 		if len(salesData) > 0 {
 			log.Printf("📅 販売データの最初の日付: %s, 最後の日付: %s", salesData[0].Date, salesData[len(salesData)-1].Date)
@@ -346,9 +297,19 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		)
 		if err != nil {
 			log.Printf("❌ 統計レポート作成エラー: %v", err)
-			// エラーが発生してもサマリーは返し、analysisReport には nil を設定
-			// レスポンスにエラー情報を含めるが、処理は継続
-			analysisReport = nil
+			// エラーが発生してもサマリーは返す
+			// 診断情報を含める
+			diagnosticInfo := fmt.Sprintf(
+				"販売データ件数: %d件, 気象データ取得: 失敗, エラー詳細: %v",
+				len(salesData),
+				err,
+			)
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"summary": summary.String(),
+				"error":   fmt.Sprintf("統計分析でエラーが発生しました。%s", diagnosticInfo),
+			})
+			return
 		} else {
 			analysisReport = report
 
@@ -378,27 +339,18 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 				}
 			}()
 		}
-	} else {
-		log.Printf("❌ 販売データが空です (len(salesData) == 0)")
 	}
 
 	// レスポンスに統計分析結果を含める
 	response := gin.H{
-		"success":          true,
-		"summary":          summary.String(),
-		"sales_data_count": len(salesData), // デバッグ用
+		"success": true,
+		"summary": summary.String(),
 	}
 	if analysisReport != nil {
 		response["analysis_report"] = analysisReport
 		log.Printf("✅ レスポンスに analysis_report を含めました")
 	} else {
 		log.Printf("⚠️ analysisReport が nil のため、レスポンスに含まれていません")
-		// エラー情報があれば含める
-		if err != nil {
-			response["error"] = fmt.Sprintf("詳細レポート生成に失敗しました: %v", err)
-		} else {
-			response["error"] = "販売データが空のため、詳細レポートを生成できませんでした"
-		}
 	}
 
 	c.JSON(http.StatusOK, response)
