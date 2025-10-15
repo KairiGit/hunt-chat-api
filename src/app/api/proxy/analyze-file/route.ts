@@ -23,9 +23,12 @@ export async function POST(request: Request) {
     const data = await response.json();
 
     // 🔍 詳細デバッグログ（バックエンドの重要情報を含む）
+    console.log('[Proxy /analyze-file] ========== Response Debug ==========');
     console.log('[Proxy /analyze-file] Response status:', response.status);
+    console.log('[Proxy /analyze-file] Response headers:', Object.fromEntries(response.headers));
     console.log('[Proxy /analyze-file] Has analysis_report:', 'analysis_report' in data);
     console.log('[Proxy /analyze-file] Data keys:', Object.keys(data));
+    console.log('[Proxy /analyze-file] Full response structure:', JSON.stringify(data, null, 2));
     
     // バックエンドのデバッグ情報を確認
     if (data.debug) {
@@ -40,11 +43,15 @@ export async function POST(request: Request) {
       if (data.debug.parse_errors && data.debug.parse_errors.length > 0) {
         console.log('  - Parse errors (first 5):', data.debug.parse_errors.slice(0, 5));
       }
+    } else {
+      console.warn('[Proxy /analyze-file] ⚠️ No debug info in response');
     }
     
     // 販売データのカウント
     if (data.sales_data_count !== undefined) {
       console.log('[Proxy /analyze-file] Sales data count:', data.sales_data_count);
+    } else {
+      console.warn('[Proxy /analyze-file] ⚠️ No sales_data_count in response');
     }
     
     // 分析レポートの詳細
@@ -61,6 +68,7 @@ export async function POST(request: Request) {
         console.warn('[Proxy /analyze-file] Error message:', data.error);
       }
     }
+    console.log('[Proxy /analyze-file] ========== End Debug ==========');
     
     return NextResponse.json(data, {
       status: response.status,
