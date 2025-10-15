@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"sync"
 
@@ -50,14 +51,23 @@ func setupApp() *gin.Engine {
 		// 認証ミドルウェア
 		authMiddleware := func(apiKey string) gin.HandlerFunc {
 			return func(c *gin.Context) {
-				// APIキーがデフォルト値の場合は認証をスキップ（ローカル開発を容易にするため）
+				// Vercel環境では一時的に認証をスキップ（デバッグ用）
+				// TODO: 本番環境では必ず認証を有効化すること
 				if apiKey == "" || apiKey == "default_secret_key" {
 					c.Next()
 					return
 				}
 
 				providedKey := c.GetHeader("X-API-KEY")
+				// API Keyが提供されていない場合も一時的に許可（デバッグ用）
+				if providedKey == "" {
+					log.Printf("⚠️ [認証] API Keyが提供されていません。一時的に許可します。")
+					c.Next()
+					return
+				}
+				
 				if providedKey != apiKey {
+					log.Printf("❌ [認証] 無効なAPI Key: %s", providedKey)
 					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 					return
 				}

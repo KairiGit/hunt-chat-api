@@ -55,14 +55,6 @@ func findIndex(slice []string, candidates ...string) int {
 	return -1
 }
 
-// min returns the smaller of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // AnalyzeFile: Logic-based file analysis with monthly aggregation
 func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	c.Request.ParseMultipartForm(10 << 20) // 10MB limit
@@ -254,6 +246,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	// 統計分析を実行
 	var analysisReport *models.AnalysisReport
 	if len(salesData) > 0 {
+		log.Printf("✅ 販売データが存在します: %d件", len(salesData))
 		// 日付範囲を確認
 		if len(salesData) > 0 {
 			log.Printf("📅 販売データの最初の日付: %s, 最後の日付: %s", salesData[0].Date, salesData[len(salesData)-1].Date)
@@ -339,6 +332,8 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 				}
 			}()
 		}
+	} else {
+		log.Printf("❌ 販売データが空です (len(salesData) == 0)")
 	}
 
 	// レスポンスに統計分析結果を含める
