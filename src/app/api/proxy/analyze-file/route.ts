@@ -10,6 +10,11 @@ export async function POST(request: Request) {
     // Vercel環境ではVERCEL_URLを、ローカル環境ではGO_BACKEND_URLを使用
     const baseUrl = process.env.GO_BACKEND_URL || `https://${process.env.VERCEL_URL}`;
     targetUrl = `${baseUrl}/api/v1/ai/analyze-file`;
+    
+    console.log('[Proxy /analyze-file] Target URL:', targetUrl);
+    console.log('[Proxy /analyze-file] Base URL:', baseUrl);
+    console.log('[Proxy /analyze-file] GO_BACKEND_URL env:', process.env.GO_BACKEND_URL || 'NOT SET');
+    console.log('[Proxy /analyze-file] VERCEL_URL env:', process.env.VERCEL_URL || 'NOT SET');
 
     const headers = new Headers();
     headers.append('X-API-KEY', process.env.API_KEY || '');

@@ -143,11 +143,11 @@ func setupApp() *gin.Engine {
 				ai.POST("/chat-input", aiHandler.ChatInput)
 				ai.POST("/analyze-file", func(c *gin.Context) {
 					log.Printf("🟢 [api/index.go] /analyze-file エンドポイント呼び出し - Build: 2025-10-16-debug-v4")
-					
+
 					// 🔍 診断: リクエストがここまで到達していることを確認
 					c.Header("X-Backend-Version", "2025-10-16-debug-v4")
 					c.Header("X-Handler-Called", "true")
-					
+
 					aiHandler.AnalyzeFile(c)
 				})
 			}
