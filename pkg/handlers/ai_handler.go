@@ -407,15 +407,15 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		"summary":          summary.String(),
 		"sales_data_count": len(salesData), // デバッグ用
 		"debug": gin.H{ // 🔍 デバッグ情報を追加
-			"header":             header,
-			"date_col_index":     dateColIdx,
-			"product_col_index":  productColIdx,
-			"sales_col_index":    salesColIdx,
-			"total_rows":         len(dataRows),
-			"successful_parses":  successfulParse,
-			"failed_parses":      len(dataRows) - successfulParse,
-			"first_3_rows":       dataRows[:int(math.Min(3, float64(len(dataRows))))],
-			"parse_errors":       parseErrors,
+			"header":            header,
+			"date_col_index":    dateColIdx,
+			"product_col_index": productColIdx,
+			"sales_col_index":   salesColIdx,
+			"total_rows":        len(dataRows),
+			"successful_parses": successfulParse,
+			"failed_parses":     len(dataRows) - successfulParse,
+			"first_3_rows":      dataRows[:int(math.Min(3, float64(len(dataRows))))],
+			"parse_errors":      parseErrors,
 		},
 	}
 	if analysisReport != nil {
@@ -428,6 +428,16 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			response["error"] = "販売データが空のため、詳細レポートを生成できませんでした"
 		}
 	}
+
+	// 🔍 Proxy形式のログを出力（Vercelのログと同じ形式）
+	responseKeys := make([]string, 0, len(response))
+	for key := range response {
+		responseKeys = append(responseKeys, key)
+	}
+	sort.Strings(responseKeys)
+	log.Printf("[Backend /analyze-file] Response status: 200")
+	log.Printf("[Backend /analyze-file] Has analysis_report: %v", analysisReport != nil)
+	log.Printf("[Backend /analyze-file] Data keys: %v", responseKeys)
 
 	c.JSON(http.StatusOK, response)
 }

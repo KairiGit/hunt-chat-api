@@ -22,10 +22,45 @@ export async function POST(request: Request) {
 
     const data = await response.json();
 
-    // デバッグログ
+    // 🔍 詳細デバッグログ（バックエンドの重要情報を含む）
     console.log('[Proxy /analyze-file] Response status:', response.status);
     console.log('[Proxy /analyze-file] Has analysis_report:', 'analysis_report' in data);
     console.log('[Proxy /analyze-file] Data keys:', Object.keys(data));
+    
+    // バックエンドのデバッグ情報を確認
+    if (data.debug) {
+      console.log('[Proxy /analyze-file] Backend debug info:');
+      console.log('  - Total rows:', data.debug.total_rows);
+      console.log('  - Successful parses:', data.debug.successful_parses);
+      console.log('  - Failed parses:', data.debug.failed_parses);
+      console.log('  - Date column index:', data.debug.date_col_index);
+      console.log('  - Product column index:', data.debug.product_col_index);
+      console.log('  - Sales column index:', data.debug.sales_col_index);
+      console.log('  - Header:', data.debug.header);
+      if (data.debug.parse_errors && data.debug.parse_errors.length > 0) {
+        console.log('  - Parse errors (first 5):', data.debug.parse_errors.slice(0, 5));
+      }
+    }
+    
+    // 販売データのカウント
+    if (data.sales_data_count !== undefined) {
+      console.log('[Proxy /analyze-file] Sales data count:', data.sales_data_count);
+    }
+    
+    // 分析レポートの詳細
+    if (data.analysis_report) {
+      console.log('[Proxy /analyze-file] Analysis report details:');
+      console.log('  - Report ID:', data.analysis_report.report_id);
+      console.log('  - Date range:', data.analysis_report.date_range);
+      console.log('  - Data points:', data.analysis_report.data_points);
+      console.log('  - Weather matches:', data.analysis_report.weather_matches);
+      console.log('  - Correlations count:', data.analysis_report.correlations?.length || 0);
+    } else {
+      console.warn('[Proxy /analyze-file] ⚠️ analysis_report is missing from response');
+      if (data.error) {
+        console.warn('[Proxy /analyze-file] Error message:', data.error);
+      }
+    }
     
     return NextResponse.json(data, {
       status: response.status,
