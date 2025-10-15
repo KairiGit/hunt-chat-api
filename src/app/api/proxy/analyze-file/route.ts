@@ -22,6 +22,11 @@ export async function POST(request: Request) {
 
     const data = await response.json();
 
+    // デバッグログ
+    console.log('[Proxy /analyze-file] Response status:', response.status);
+    console.log('[Proxy /analyze-file] Has analysis_report:', 'analysis_report' in data);
+    console.log('[Proxy /analyze-file] Data keys:', Object.keys(data));
+    
     return NextResponse.json(data, {
       status: response.status,
     });

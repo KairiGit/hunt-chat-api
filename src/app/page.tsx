@@ -104,11 +104,13 @@ export default function Home() {
         throw new Error(detailedError);
       }
       const result = await response.json();
+      console.log('🔵 [Client] レスポンス全体:', result); // 完全なレスポンスをログ
       console.log('🔵 [Client] 分析結果:', {
         success: result.success,
         hasSummary: !!result.summary,
         hasAnalysisReport: !!result.analysis_report,
         summaryLength: result.summary?.length,
+        salesDataCount: result.sales_data_count, // 追加
         error: result.error
       });
       if (result.success) {
