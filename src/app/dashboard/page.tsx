@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,7 +91,7 @@ export default function DashboardPage() {
   const detectAnomalies = async () => {
     setIsLoadingAnomalies(true);
     try {
-      const response = await fetch('/api/v1/ai/detect-anomalies', {
+      const response = await fetch('/api/proxy/detect-anomalies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

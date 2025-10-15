@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +35,7 @@ export default function SettingsPage() {
     fiscal_year_start: '04-01',
   });
 
-  const [products, setProducts] = useState<Product[]>([
+  const [products] = useState<Product[]>([
     { id: 'P001', name: '製品A', category: '電子部品', unit: '個', lead_time_days: 7 },
     { id: 'P002', name: '製品B', category: '機械部品', unit: 'セット', lead_time_days: 14 },
     { id: 'P003', name: '製品C', category: '組立品', unit: '台', lead_time_days: 21 },
@@ -56,7 +56,7 @@ export default function SettingsPage() {
       
       setSaveMessage('✅ 設定を保存しました');
       setTimeout(() => setSaveMessage(''), 3000);
-    } catch (error) {
+    } catch {
       setSaveMessage('❌ 保存に失敗しました');
     } finally {
       setIsSaving(false);

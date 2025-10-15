@@ -66,9 +66,12 @@ export default function AnalysisPage() {
         if (result.analysis_report) {
           setAnalysisReport(result.analysis_report);
         } else {
-          // レポートがない場合は警告を表示
-          setWarning('基本的な分析は完了しましたが、詳細レポートの生成に失敗しました。データ量や気象データの取得に問題がある可能性があります。');
-          console.warn('分析は成功しましたが、詳細レポートが生成されませんでした');
+          // レポートがない場合は警告を表示（より詳細な情報を含める）
+          const warningMessage = result.error 
+            ? `詳細レポートの生成に失敗しました。${result.error}`
+            : '基本的な分析は完了しましたが、詳細レポートの生成に失敗しました。データ量や気象データの取得に問題がある可能性があります。';
+          setWarning(warningMessage);
+          console.warn('分析は成功しましたが、詳細レポートが生成されませんでした', result);
         }
       } else {
         throw new Error(result.summary || 'Failed to get analysis summary.');

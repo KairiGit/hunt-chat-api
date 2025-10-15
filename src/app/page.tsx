@@ -4,21 +4,21 @@ import { useState, useEffect, useRef } from 'react';
 import Image from "next/image";
 
 // --- 型定義 ---
-interface DemandForecastSettings { available_regions: { [key: string]: string }; available_products: string[]; forecast_range: { min_days: number; max_days: number }; }
-interface DemandForecastItem { date: string; predicted_demand: number; confidence_level: number; weather_impact: number; seasonal_impact: number; }
-interface DemandForecastResponse { success: boolean; data?: { forecasts: DemandForecastItem[]; region_name: string; product_category: string; }; error?: string; }
+// interface DemandForecastSettings { available_regions: { [key: string]: string }; available_products: string[]; forecast_range: { min_days: number; max_days: number }; }
+// interface DemandForecastItem { date: string; predicted_demand: number; confidence_level: number; weather_impact: number; seasonal_impact: number; }
+// interface DemandForecastResponse { success: boolean; data?: { forecasts: DemandForecastItem[]; region_name: string; product_category: string; }; error?: string; }
 interface ChatMessage { sender: 'user' | 'ai'; text: string; }
 
 // --- コンポーネント ---
 export default function Home() {
   // --- State定義 ---
-  const [settings, setSettings] = useState<DemandForecastSettings | null>(null);
-  const [forecastResult, setForecastResult] = useState<DemandForecastResponse['data'] | null>(null);
-  const [regionCode, setRegionCode] = useState<string>('240000');
-  const [productCategory, setProductCategory] = useState<string>('飲料');
-  const [forecastDays, setForecastDays] = useState<number>(7);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // const [settings, setSettings] = useState<DemandForecastSettings | null>(null);
+  // const [forecastResult, setForecastResult] = useState<DemandForecastResponse['data'] | null>(null);
+  // const [regionCode, setRegionCode] = useState<string>('240000');
+  // const [productCategory, setProductCategory] = useState<string>('飲料');
+  // const [forecastDays, setForecastDays] = useState<number>(7);
+  // const [loading, setLoading] = useState(false);
+  // const [error, setError] = useState<string | null>(null);
 
   // File Analysis State
   const [selectedFileForAnalysis, setSelectedFileForAnalysis] = useState<File | null>(null);
@@ -34,50 +34,50 @@ export default function Home() {
 
   // --- データ取得 ---
   useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const response = await fetch('/api/proxy/demand/settings');
-        if (!response.ok) throw new Error('Failed to fetch settings.');
-        const result = await response.json();
-        if (result.success) {
-          setSettings(result.data);
-          if (result.data.available_regions) setRegionCode(Object.keys(result.data.available_regions)[0] || '240000');
-          if (result.data.available_products) setProductCategory(result.data.available_products[0] || '飲料');
-        } else {
-          throw new Error(result.error || 'Failed to parse settings.');
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'An unknown error occurred while fetching settings.');
-      }
-    };
-    fetchSettings();
+    // const fetchSettings = async () => {
+    //   try {
+    //     const response = await fetch('/api/proxy/demand/settings');
+    //     if (!response.ok) throw new Error('Failed to fetch settings.');
+    //     const result = await response.json();
+    //     if (result.success) {
+    //       setSettings(result.data);
+    //       if (result.data.available_regions) setRegionCode(Object.keys(result.data.available_regions)[0] || '240000');
+    //       if (result.data.available_products) setProductCategory(result.data.available_products[0] || '飲料');
+    //     } else {
+    //       throw new Error(result.error || 'Failed to parse settings.');
+    //     }
+    //   } catch (e) {
+    //     setError(e instanceof Error ? e.message : 'An unknown error occurred while fetching settings.');
+    //   }
+    // };
+    // fetchSettings();
   }, []);
 
   // --- ハンドラ関数 ---
-  const handleForecast = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setForecastResult(null);
-    try {
-      const response = await fetch('/api/proxy/demand/forecast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ region_code: regionCode, product_category: productCategory, forecast_days: forecastDays }),
-      });
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || `HTTP error! status: ${response.status}`);
-      }
-      const result: DemandForecastResponse = await response.json();
-      if (result.success && result.data) setForecastResult(result.data);
-      else throw new Error(result.error || 'Failed to get forecast data from API');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'An unknown error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // const handleForecast = async (e: React.FormEvent) => {
+  //   e.preventDefault();
+  //   setLoading(true);
+  //   setError(null);
+  //   setForecastResult(null);
+  //   try {
+  //     const response = await fetch('/api/proxy/demand/forecast', {
+  //       method: 'POST',
+  //       headers: { 'Content-Type': 'application/json' },
+  //       body: JSON.stringify({ region_code: regionCode, product_category: productCategory, forecast_days: forecastDays }),
+  //     });
+  //     if (!response.ok) {
+  //       const errData = await response.json();
+  //       throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+  //     }
+  //     const result: DemandForecastResponse = await response.json();
+  //     if (result.success && result.data) setForecastResult(result.data);
+  //     else throw new Error(result.error || 'Failed to get forecast data from API');
+  //   } catch (e) {
+  //     setError(e instanceof Error ? e.message : 'An unknown error occurred');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
   const handleFileAnalysis = async () => {
     if (!selectedFileForAnalysis) return;
@@ -118,7 +118,6 @@ export default function Home() {
     // ユーザーのメッセージと、AIの返信用の空のメッセージを先に追加
     setChatMessages((prev) => [...prev, userMessage, { sender: 'ai', text: '' }]);
     setChatLoading(true);
-    setError(null);
     setChatInput(''); // 入力欄をクリア
 
     try {

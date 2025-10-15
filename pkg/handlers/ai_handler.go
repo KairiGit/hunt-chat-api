@@ -298,10 +298,16 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		if err != nil {
 			log.Printf("❌ 統計レポート作成エラー: %v", err)
 			// エラーが発生してもサマリーは返す
+			// 診断情報を含める
+			diagnosticInfo := fmt.Sprintf(
+				"販売データ件数: %d件, 気象データ取得: 失敗, エラー詳細: %v",
+				len(salesData),
+				err,
+			)
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
 				"summary": summary.String(),
-				"error":   fmt.Sprintf("統計分析でエラーが発生しました: %v", err),
+				"error":   fmt.Sprintf("統計分析でエラーが発生しました。%s", diagnosticInfo),
 			})
 			return
 		} else {

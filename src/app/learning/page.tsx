@@ -82,7 +82,7 @@ export default function LearningPage() {
   const detectAnomalies = async () => {
     setIsLoadingAnomalies(true);
     try {
-      const response = await fetch('/api/v1/ai/detect-anomalies', {
+      const response = await fetch('/api/proxy/detect-anomalies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -210,6 +210,7 @@ export default function LearningPage() {
     detectAnomalies();
     loadResponses();
     loadInsights();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
