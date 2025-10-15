@@ -328,8 +328,9 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 
 	// レスポンスに統計分析結果を含める
 	response := gin.H{
-		"success": true,
-		"summary": summary.String(),
+		"success":         true,
+		"summary":         summary.String(),
+		"sales_data_count": len(salesData), // デバッグ用
 	}
 	if analysisReport != nil {
 		response["analysis_report"] = analysisReport
@@ -339,6 +340,8 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		// エラー情報があれば含める
 		if err != nil {
 			response["error"] = fmt.Sprintf("詳細レポート生成に失敗しました: %v", err)
+		} else {
+			response["error"] = "販売データが空のため、詳細レポートを生成できませんでした"
 		}
 	}
 
