@@ -25,7 +25,9 @@ export async function POST(request: Request) {
     // 🔍 詳細デバッグログ（バックエンドの重要情報を含む）
     console.log('[Proxy /analyze-file] ========== Response Debug ==========');
     console.log('[Proxy /analyze-file] Response status:', response.status);
-    console.log('[Proxy /analyze-file] Backend version:', data.backend_version || 'UNKNOWN (Old version!)');
+    console.log('[Proxy /analyze-file] X-Backend-Version header:', response.headers.get('x-backend-version') || 'NOT SET');
+    console.log('[Proxy /analyze-file] X-Handler-Called header:', response.headers.get('x-handler-called') || 'NOT SET');
+    console.log('[Proxy /analyze-file] Backend version (from body):', data.backend_version || 'UNKNOWN (Old version!)');
     console.log('[Proxy /analyze-file] Has analysis_report:', 'analysis_report' in data);
     console.log('[Proxy /analyze-file] Data keys:', Object.keys(data));
     console.log('[Proxy /analyze-file] Full response structure:', JSON.stringify(data, null, 2));
