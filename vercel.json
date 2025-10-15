@@ -7,7 +7,15 @@
     },
     {
       "src": "api/index.go",
-      "use": "@vercel/go"
+      "use": "@vercel/go",
+      "config": {
+        "includeFiles": [
+          "pkg/**/*.go",
+          "configs/**/*.go",
+          "go.mod",
+          "go.sum"
+        ]
+      }
     }
   ],
   "routes": [

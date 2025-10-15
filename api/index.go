@@ -1,7 +1,7 @@
 package handler
 
-// Build version: 2025-10-16-debug-v4
-// Force rebuild: Added error diagnostics to all return paths
+// Build version: 2025-10-16-debug-v5-FORCE-REBUILD
+// Vercel: Please rebuild this Go binary with pkg/ dependencies
 
 import (
 	"log"
@@ -142,10 +142,10 @@ func setupApp() *gin.Engine {
 				ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
 				ai.POST("/chat-input", aiHandler.ChatInput)
 				ai.POST("/analyze-file", func(c *gin.Context) {
-					log.Printf("🟢 [api/index.go] /analyze-file エンドポイント呼び出し - Build: 2025-10-16-debug-v4")
+					log.Printf("🟢 [api/index.go] /analyze-file エンドポイント呼び出し - Build: 2025-10-16-debug-v5")
 
 					// 🔍 診断: リクエストがここまで到達していることを確認
-					c.Header("X-Backend-Version", "2025-10-16-debug-v4")
+					c.Header("X-Backend-Version", "2025-10-16-debug-v5")
 					c.Header("X-Handler-Called", "true")
 
 					aiHandler.AnalyzeFile(c)
