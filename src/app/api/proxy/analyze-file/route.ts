@@ -7,14 +7,21 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
 
-    // Vercel環境ではVERCEL_URLを、ローカル環境ではGO_BACKEND_URLを使用
-    const baseUrl = process.env.GO_BACKEND_URL || `https://${process.env.VERCEL_URL}`;
+    // プレビュー環境では VERCEL_URL を、本番環境では GO_BACKEND_URL を使用
+    // VERCEL_ENV が 'production' の場合のみ GO_BACKEND_URL を優先
+    const isProduction = process.env.VERCEL_ENV === 'production';
+    const baseUrl = isProduction && process.env.GO_BACKEND_URL 
+      ? process.env.GO_BACKEND_URL 
+      : `https://${process.env.VERCEL_URL}`;
+    
     targetUrl = `${baseUrl}/api/v1/ai/analyze-file`;
     
     console.log('[Proxy /analyze-file] Target URL:', targetUrl);
     console.log('[Proxy /analyze-file] Base URL:', baseUrl);
+    console.log('[Proxy /analyze-file] VERCEL_ENV:', process.env.VERCEL_ENV || 'NOT SET');
     console.log('[Proxy /analyze-file] GO_BACKEND_URL env:', process.env.GO_BACKEND_URL || 'NOT SET');
     console.log('[Proxy /analyze-file] VERCEL_URL env:', process.env.VERCEL_URL || 'NOT SET');
+    console.log('[Proxy /analyze-file] Is Production:', isProduction);
 
     const headers = new Headers();
     headers.append('X-API-KEY', process.env.API_KEY || '');
