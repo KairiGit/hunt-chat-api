@@ -53,6 +53,29 @@ export default function AnalysisPage() {
 
       const result: AnalysisResponse = await response.json();
       
+      // 🔍 デバッグ情報をコンソールに出力
+      console.log('🔵 [Client] レスポンス全体:', result);
+      console.log('🔵 [Client] デバッグ情報:', result.debug);
+      if (result.debug) {
+        console.log('📋 ヘッダー:', result.debug.header);
+        console.log('📊 列インデックス:', {
+          date: result.debug.date_col_index,
+          product: result.debug.product_col_index,
+          sales: result.debug.sales_col_index,
+        });
+        console.log('📈 解析結果:', {
+          total: result.debug.total_rows,
+          successful: result.debug.successful_parses,
+          failed: result.debug.failed_parses,
+        });
+        if (result.debug.parse_errors && result.debug.parse_errors.length > 0) {
+          console.log('⚠️ 解析エラー:', result.debug.parse_errors);
+        }
+        if (result.debug.first_3_rows) {
+          console.log('📋 最初の3行:', result.debug.first_3_rows);
+        }
+      }
+      
       // エラーメッセージがある場合
       if (result.error) {
         throw new Error(result.error);

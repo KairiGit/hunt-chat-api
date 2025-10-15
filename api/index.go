@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sync"
 
-	"hunt-chat-api/configs"
+	config "hunt-chat-api/configs"
 	"hunt-chat-api/pkg/handlers"
 	"hunt-chat-api/pkg/services"
 

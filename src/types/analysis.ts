@@ -36,4 +36,16 @@ export interface AnalysisResponse {
   success: boolean;
   summary: string;
   error?: string; // エラーメッセージを追加
+  sales_data_count?: number; // デバッグ用
+  debug?: { // 🔍 デバッグ情報を追加
+    header: string[];
+    date_col_index: number;
+    product_col_index: number;
+    sales_col_index: number;
+    total_rows: number;
+    successful_parses: number;
+    failed_parses: number;
+    first_3_rows: string[][];
+    parse_errors: string[];
+  };
 }
