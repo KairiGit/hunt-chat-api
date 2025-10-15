@@ -1,5 +1,8 @@
 package handler
 
+// Build version: 2025-10-16-debug-v3
+// This comment forces Vercel to rebuild the Go backend
+
 import (
 	"log"
 	"net/http"
