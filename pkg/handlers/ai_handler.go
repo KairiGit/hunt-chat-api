@@ -406,6 +406,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		"success":          true,
 		"summary":          summary.String(),
 		"sales_data_count": len(salesData), // デバッグ用
+		"backend_version":  "2025-10-16-debug-v3", // 🔍 バージョン確認用
 		"debug": gin.H{ // 🔍 デバッグ情報を追加
 			"header":            header,
 			"date_col_index":    dateColIdx,
