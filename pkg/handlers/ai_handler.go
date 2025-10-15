@@ -290,19 +290,9 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		)
 		if err != nil {
 			log.Printf("❌ 統計レポート作成エラー: %v", err)
-			// エラーが発生してもサマリーは返す
-			// 診断情報を含める
-			diagnosticInfo := fmt.Sprintf(
-				"販売データ件数: %d件, 気象データ取得: 失敗, エラー詳細: %v",
-				len(salesData),
-				err,
-			)
-			c.JSON(http.StatusOK, gin.H{
-				"success": true,
-				"summary": summary.String(),
-				"error":   fmt.Sprintf("統計分析でエラーが発生しました。%s", diagnosticInfo),
-			})
-			return
+			// エラーが発生してもサマリーは返し、analysisReport には nil を設定
+			// レスポンスにエラー情報を含めるが、処理は継続
+			analysisReport = nil
 		} else {
 			analysisReport = report
 
@@ -346,6 +336,10 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		log.Printf("✅ レスポンスに analysis_report を含めました")
 	} else {
 		log.Printf("⚠️ analysisReport が nil のため、レスポンスに含まれていません")
+		// エラー情報があれば含める
+		if err != nil {
+			response["error"] = fmt.Sprintf("詳細レポート生成に失敗しました: %v", err)
+		}
 	}
 
 	c.JSON(http.StatusOK, response)
