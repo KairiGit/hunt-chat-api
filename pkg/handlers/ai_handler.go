@@ -212,26 +212,82 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	// === 目標① 統計分析の実行 ===
 	// 販売データを WeatherSalesData 形式に変換
 	var salesData []models.WeatherSalesData
-	for _, row := range dataRows {
+	var parseErrors []string
+	successfulParse := 0
+	
+	log.Printf("🔍 CSV解析開始: 総行数=%d, dateCol=%d, productCol=%d, salesCol=%d", len(dataRows), dateColIdx, productColIdx, salesColIdx)
+	
+	// 最初の数行の生データをログに出力
+	for i := 0; i < int(math.Min(3, float64(len(dataRows)))); i++ {
+		if len(dataRows[i]) > 0 {
+			log.Printf("  📋 行%d (生データ): %v", i+1, dataRows[i])
+		}
+	}
+	
+	for rowIdx, row := range dataRows {
 		if len(row) > dateColIdx && len(row) > productColIdx && len(row) > salesColIdx {
-			dateStr := row[dateColIdx]
-			product := row[productColIdx]
-			salesStr := row[salesColIdx]
+			dateStr := strings.TrimSpace(row[dateColIdx])
+			product := strings.TrimSpace(row[productColIdx])
+			salesStr := strings.TrimSpace(row[salesColIdx])
+
+			// デバッグ: 最初の数行を詳細ログ
+			if rowIdx < 3 {
+				log.Printf("  🔎 行%d 解析中: date='%s', product='%s', sales='%s'", rowIdx+1, dateStr, product, salesStr)
+			}
 
 			var t time.Time
 			t, _ = time.Parse("2006-01-02", dateStr)
 			if t == (time.Time{}) {
 				t, _ = time.Parse("2006/1/2", dateStr)
+				if t == (time.Time{}) {
+					t, _ = time.Parse("2006/01/02", dateStr)
+				}
 			}
 
 			sales, convErr := strconv.ParseFloat(salesStr, 64)
-			if product != "" && t != (time.Time{}) && convErr == nil {
-				salesData = append(salesData, models.WeatherSalesData{
-					Date:      t.Format("2006-01-02"),
-					ProductID: product,
-					Sales:     sales,
-				})
+			
+			// 解析失敗時のログ
+			if product == "" || t == (time.Time{}) || convErr != nil {
+				if rowIdx < 5 { // 最初の5行のみ詳細エラーを記録
+					errorMsg := fmt.Sprintf("行%d: ", rowIdx+1)
+					if product == "" {
+						errorMsg += "製品ID空, "
+					}
+					if t == (time.Time{}) {
+						errorMsg += fmt.Sprintf("日付解析失敗('%s'), ", dateStr)
+					}
+					if convErr != nil {
+						errorMsg += fmt.Sprintf("売上変換失敗('%s': %v), ", salesStr, convErr)
+					}
+					parseErrors = append(parseErrors, errorMsg)
+				}
+				continue
 			}
+			
+			salesData = append(salesData, models.WeatherSalesData{
+				Date:      t.Format("2006-01-02"),
+				ProductID: product,
+				Sales:     sales,
+			})
+			successfulParse++
+			
+			// 最初の成功例をログ
+			if successfulParse == 1 {
+				log.Printf("  ✅ 初回成功: date=%s, product=%s, sales=%.2f", t.Format("2006-01-02"), product, sales)
+			}
+		} else {
+			if rowIdx < 5 {
+				parseErrors = append(parseErrors, fmt.Sprintf("行%d: 列数不足 (len=%d, 必要: date=%d, product=%d, sales=%d)", 
+					rowIdx+1, len(row), dateColIdx, productColIdx, salesColIdx))
+			}
+		}
+	}
+	
+	log.Printf("📊 CSV解析結果: 成功=%d件, 失敗=%d件", successfulParse, len(dataRows)-successfulParse)
+	if len(parseErrors) > 0 {
+		log.Printf("⚠️ 解析エラー例 (最大5件):")
+		for _, errMsg := range parseErrors {
+			log.Printf("   %s", errMsg)
 		}
 	}
 
