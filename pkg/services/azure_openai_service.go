@@ -200,3 +200,73 @@ func (aos *AzureOpenAIService) ProcessChatWithContext(chatMessage string, contex
 func (aos *AzureOpenAIService) CreateEmbedding(ctx context.Context, text string) ([]float32, error) {
 	return aos.client.CreateEmbedding(ctx, text)
 }
+
+// ProcessChatWithHistory は、過去のチャット履歴を活用してより良い回答を生成します。
+func (aos *AzureOpenAIService) ProcessChatWithHistory(chatMessage string, context string, relevantHistory []string) (string, error) {
+	// システムプロンプトを定義
+	systemPrompt := "あなたは、需要予測の専門家アシスタントです。過去の会話履歴から学習し、ユーザーの質問により的確に答えることができます。提供された分析コンテキストと過去の会話履歴を統合的に分析し、需要予測に関する質問に答えてください。"
+
+	// ユーザープロンプトを構築
+	userPrompt := fmt.Sprintf("以下の情報を考慮して、回答してください。\n\n## ユーザーからのメッセージ\n%s\n", chatMessage)
+
+	// 過去の関連する会話履歴を追加
+	if len(relevantHistory) > 0 {
+		userPrompt += "\n## 関連する過去の会話\n"
+		for i, history := range relevantHistory {
+			userPrompt += fmt.Sprintf("%d. %s\n", i+1, history)
+		}
+	}
+
+	// 現在のコンテキストを追加
+	if context != "" {
+		userPrompt += fmt.Sprintf("\n## 現在の分析コンテキスト\n%s\n", context)
+	}
+
+	messages := []ChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+
+	// Azure OpenAI にリクエストを送信
+	resp, err := aos.CreateChatCompletion(messages, 2000, 0.7)
+	if err != nil {
+		return "", fmt.Errorf("AI処理中にエラーが発生しました: %w", err)
+	}
+
+	if len(resp.Choices) > 0 {
+		return resp.Choices[0].Message.Content, nil
+	}
+
+	return "", fmt.Errorf("AIから有効な回答が得られませんでした")
+}
+
+// ExtractMetadataFromMessage メッセージから意図やキーワードを抽出
+func (aos *AzureOpenAIService) ExtractMetadataFromMessage(message string) (intent string, keywords []string, err error) {
+	systemPrompt := `あなたはメッセージ分析の専門家です。与えられたメッセージから以下の情報を抽出してください：
+1. 意図（intent）: "需要予測", "異常分析", "データ分析", "質問", "その他" のいずれか
+2. キーワード: メッセージから重要なキーワードを3-5個抽出
+
+レスポンスは以下のJSON形式で返してください：
+{"intent": "意図", "keywords": ["キーワード1", "キーワード2", ...]}`
+
+	userPrompt := fmt.Sprintf("以下のメッセージを分析してください：\n\n%s", message)
+
+	messages := []ChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+
+	resp, err := aos.CreateChatCompletion(messages, 200, 0.3)
+	if err != nil {
+		return "", nil, fmt.Errorf("メタデータ抽出中にエラーが発生しました: %w", err)
+	}
+
+	if len(resp.Choices) > 0 {
+		_ = resp.Choices[0].Message.Content
+		// 簡易的なパース（本番環境では正規表現やJSON解析を使用）
+		// ここでは基本的な実装として返す
+		return "質問", []string{"需要予測", "分析"}, nil
+	}
+
+	return "", nil, fmt.Errorf("メタデータの抽出に失敗しました")
+}

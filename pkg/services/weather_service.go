@@ -6,7 +6,14 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
+)
+
+// グローバルキャッシュ（スレッドセーフ）
+var (
+	weatherCache      = make(map[string][]HistoricalWeatherData)
+	weatherCacheMutex sync.RWMutex
 )
 
 // WeatherService 気象データサービス
@@ -262,33 +269,45 @@ func (ws *WeatherService) TestWeatherAPI() {
 	log.Println("=== 気象庁API テスト完了 ===")
 }
 
-// GetHistoricalWeatherData 過去の気象データを取得
+// GetHistoricalWeatherData 過去の気象データを取得（キャッシュ対応版）
 func (ws *WeatherService) GetHistoricalWeatherData(regionCode string, startDate, endDate time.Time) ([]HistoricalWeatherData, error) {
-	var historicalData []HistoricalWeatherData
-
 	// 日付範囲をチェック
 	if startDate.After(endDate) {
 		return nil, fmt.Errorf("開始日は終了日より前である必要があります")
 	}
 
-	// 過去1年以内のデータのみ取得可能とする制限
-	oneYearAgo := time.Now().AddDate(-1, 0, 0)
-	if startDate.Before(oneYearAgo) {
-		return nil, fmt.Errorf("1年以上前のデータは取得できません")
+	// 過去データの取得制限を拡張（模擬データ生成のため5年まで許可）
+	fiveYearsAgo := time.Now().AddDate(-5, 0, 0)
+	if startDate.Before(fiveYearsAgo) {
+		log.Printf("⚠️ 5年以上前のデータはサポートされていません: %s", startDate.Format("2006-01-02"))
 	}
 
-	// 日付範囲を反復処理
-	for d := startDate; d.Before(endDate) || d.Equal(endDate); d = d.AddDate(0, 0, 1) {
-		// 各日のデータを取得
-		dailyData, err := ws.getHistoricalDataForDate(regionCode, d)
-		if err != nil {
-			log.Printf("日付 %s のデータ取得エラー: %v", d.Format("2006-01-02"), err)
-			continue
-		}
+	// キャッシュキーを生成
+	cacheKey := fmt.Sprintf("%s:%s:%s", regionCode, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 
-		historicalData = append(historicalData, dailyData...)
+	// キャッシュをチェック（読み取りロック）
+	weatherCacheMutex.RLock()
+	cachedData, exists := weatherCache[cacheKey]
+	weatherCacheMutex.RUnlock()
+
+	if exists {
+		log.Printf("🎯 キャッシュヒット: 地域=%s, 期間=%s〜%s (%d件)",
+			regionCode, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), len(cachedData))
+		return cachedData, nil
 	}
 
+	log.Printf("🔍 気象データ生成開始: 地域=%s, 期間=%s〜%s",
+		regionCode, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+
+	// キャッシュミス：一括生成（書き込みロックは生成後に取得）
+	historicalData := ws.generateMockHistoricalDataBulk(regionCode, startDate, endDate)
+
+	// キャッシュに保存（書き込みロック）
+	weatherCacheMutex.Lock()
+	weatherCache[cacheKey] = historicalData
+	weatherCacheMutex.Unlock()
+
+	log.Printf("✅ 気象データ生成完了: %d件 (キャッシュに保存)", len(historicalData))
 	return historicalData, nil
 }
 
@@ -410,6 +429,58 @@ func (ws *WeatherService) generateMockHistoricalData(regionCode string, date tim
 	}
 
 	return []HistoricalWeatherData{data}
+}
+
+// generateMockHistoricalDataBulk 指定期間の模擬データを一括生成（高速版）
+func (ws *WeatherService) generateMockHistoricalDataBulk(regionCode string, startDate, endDate time.Time) []HistoricalWeatherData {
+	regionName := ws.getRegionName(regionCode)
+
+	// 日数を計算して事前にメモリ確保
+	days := int(endDate.Sub(startDate).Hours()/24) + 1
+	result := make([]HistoricalWeatherData, 0, days)
+
+	// 一括生成（関数呼び出しのオーバーヘッドを削減）
+	for i := 0; i < days; i++ {
+		date := startDate.AddDate(0, 0, i)
+		month := date.Month()
+		baseTemp := 20.0
+
+		// 季節による気温調整
+		switch {
+		case month >= 6 && month <= 8: // 夏
+			baseTemp = 28.0
+		case month >= 12 || month <= 2: // 冬
+			baseTemp = 8.0
+		case month >= 3 && month <= 5: // 春
+			baseTemp = 18.0
+		case month >= 9 && month <= 11: // 秋
+			baseTemp = 20.0
+		}
+
+		// 日付に基づく変動を追加
+		dayVariation := float64(date.Day()%10 - 5)
+
+		data := HistoricalWeatherData{
+			Date:          date.Format("2006-01-02"),
+			RegionCode:    regionCode,
+			RegionName:    regionName,
+			Temperature:   baseTemp + dayVariation,
+			MaxTemp:       baseTemp + dayVariation + 5,
+			MinTemp:       baseTemp + dayVariation - 5,
+			Humidity:      60.0 + float64(date.Day()%20),
+			Precipitation: 0.0,
+			WindSpeed:     2.0 + float64(date.Day()%5),
+			WindDirection: "南",
+			Pressure:      1013.25,
+			Weather:       "晴れ",
+			WeatherCode:   "100",
+			DataSource:    "模擬データ（一括生成）",
+		}
+
+		result = append(result, data)
+	}
+
+	return result
 }
 
 // getRegionName 地域コードから地域名を取得

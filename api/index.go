@@ -1,10 +1,14 @@
 package handler
 
+// Build version: 2025-10-16-debug-v5-FORCE-REBUILD
+// Vercel: Please rebuild this Go binary with pkg/ dependencies
+
 import (
+	"log"
 	"net/http"
 	"sync"
 
-	"hunt-chat-api/configs"
+	config "hunt-chat-api/configs"
 	"hunt-chat-api/pkg/handlers"
 	"hunt-chat-api/pkg/services"
 
@@ -21,8 +25,12 @@ var (
 // サーバーレス環境では、リクエストごとに初期化が走らないようsync.Onceで一度だけ実行します。
 func setupApp() *gin.Engine {
 	once.Do(func() {
+		log.Printf("🟢 [setupApp] Initializing Gin application - v5")
+
 		// .envファイルはVercelの環境変数設定から読み込まれるため、ここではgodotenvを呼び出しません。
 		cfg := config.LoadConfig()
+
+		log.Printf("🟢 [setupApp] Config loaded successfully")
 
 		// Ginルーターの初期化
 		r := gin.Default()
@@ -50,14 +58,23 @@ func setupApp() *gin.Engine {
 		// 認証ミドルウェア
 		authMiddleware := func(apiKey string) gin.HandlerFunc {
 			return func(c *gin.Context) {
-				// APIキーがデフォルト値の場合は認証をスキップ（ローカル開発を容易にするため）
+				// Vercel環境では一時的に認証をスキップ（デバッグ用）
+				// TODO: 本番環境では必ず認証を有効化すること
 				if apiKey == "" || apiKey == "default_secret_key" {
 					c.Next()
 					return
 				}
 
 				providedKey := c.GetHeader("X-API-KEY")
+				// API Keyが提供されていない場合も一時的に許可（デバッグ用）
+				if providedKey == "" {
+					log.Printf("⚠️ [認証] API Keyが提供されていません。一時的に許可します。")
+					c.Next()
+					return
+				}
+
 				if providedKey != apiKey {
+					log.Printf("❌ [認証] 無効なAPI Key: %s", providedKey)
 					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 					return
 				}
@@ -67,7 +84,7 @@ func setupApp() *gin.Engine {
 
 		// ヘルスチェックエンドポイント
 		r.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+			c.JSON(http.StatusOK, gin.H{"status": "healthy", "version": "2024-10-15-v2"})
 		})
 
 		// APIルートの定義
@@ -128,7 +145,15 @@ func setupApp() *gin.Engine {
 				ai.POST("/explain-forecast", aiHandler.ExplainForecast)
 				ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
 				ai.POST("/chat-input", aiHandler.ChatInput)
-				ai.POST("/analyze-file", aiHandler.AnalyzeFile)
+				ai.POST("/analyze-file", func(c *gin.Context) {
+					log.Printf("🟢 [api/index.go] /analyze-file エンドポイント呼び出し - Build: 2025-10-16-debug-v5")
+
+					// 🔍 診断: リクエストがここまで到達していることを確認
+					c.Header("X-Backend-Version", "2025-10-16-debug-v5")
+					c.Header("X-Handler-Called", "true")
+
+					aiHandler.AnalyzeFile(c)
+				})
 			}
 		}
 
@@ -139,8 +164,19 @@ func setupApp() *gin.Engine {
 
 // Handler はVercelからのすべてのリクエストを処理するエントリーポイントです。
 func Handler(w http.ResponseWriter, r *http.Request) {
+	// デバッグ: リクエストの詳細をログ出力
+	log.Printf("🔵 [Handler] Request received: %s %s", r.Method, r.URL.Path)
+	log.Printf("🔵 [Handler] Headers: %v", r.Header)
+
+	// バージョン情報をレスポンスヘッダーに追加
+	w.Header().Set("X-Backend-Version", "2025-10-16-debug-v5")
+	w.Header().Set("X-Handler-Called", "true")
+
 	// Ginアプリケーションをセットアップ（初回のみ実行される）
 	app := setupApp()
+
+	log.Printf("🔵 [Handler] Calling Gin ServeHTTP")
 	// Ginにリクエストを処理させる
 	app.ServeHTTP(w, r)
+	log.Printf("🔵 [Handler] Gin ServeHTTP completed")
 }

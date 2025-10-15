@@ -1,0 +1,4 @@
+# Force rebuild by creating .vercelignore
+# This file ensures Vercel doesn't ignore important files
+!api/
+!pkg/
