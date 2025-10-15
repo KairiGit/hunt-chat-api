@@ -2,12 +2,17 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:8080/api/:path*',
-      },
-    ];
+    // ローカル開発環境のみ localhost:8080 にリライト
+    if (process.env.NODE_ENV === 'development') {
+      return [
+        {
+          source: '/api/v1/:path*',
+          destination: 'http://localhost:8080/api/v1/:path*',
+        },
+      ];
+    }
+    // 本番環境では Next.js のリライトを使用せず、vercel.json のルーティングに任せる
+    return [];
   },
 };
 

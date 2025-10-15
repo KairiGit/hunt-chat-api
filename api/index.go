@@ -26,10 +26,10 @@ var (
 func setupApp() *gin.Engine {
 	once.Do(func() {
 		log.Printf("🟢 [setupApp] Initializing Gin application - v5")
-		
+
 		// .envファイルはVercelの環境変数設定から読み込まれるため、ここではgodotenvを呼び出しません。
 		cfg := config.LoadConfig()
-		
+
 		log.Printf("🟢 [setupApp] Config loaded successfully")
 
 		// Ginルーターの初期化
@@ -167,14 +167,14 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	// デバッグ: リクエストの詳細をログ出力
 	log.Printf("🔵 [Handler] Request received: %s %s", r.Method, r.URL.Path)
 	log.Printf("🔵 [Handler] Headers: %v", r.Header)
-	
+
 	// バージョン情報をレスポンスヘッダーに追加
 	w.Header().Set("X-Backend-Version", "2025-10-16-debug-v5")
 	w.Header().Set("X-Handler-Called", "true")
-	
+
 	// Ginアプリケーションをセットアップ（初回のみ実行される）
 	app := setupApp()
-	
+
 	log.Printf("🔵 [Handler] Calling Gin ServeHTTP")
 	// Ginにリクエストを処理させる
 	app.ServeHTTP(w, r)
