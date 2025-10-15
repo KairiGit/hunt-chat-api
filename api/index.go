@@ -77,7 +77,7 @@ func setupApp() *gin.Engine {
 
 		// ヘルスチェックエンドポイント
 		r.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+			c.JSON(http.StatusOK, gin.H{"status": "healthy", "version": "2024-10-15-v2"})
 		})
 
 		// APIルートの定義

@@ -214,16 +214,16 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	var salesData []models.WeatherSalesData
 	var parseErrors []string
 	successfulParse := 0
-	
+
 	log.Printf("🔍 CSV解析開始: 総行数=%d, dateCol=%d, productCol=%d, salesCol=%d", len(dataRows), dateColIdx, productColIdx, salesColIdx)
-	
+
 	// 最初の数行の生データをログに出力
 	for i := 0; i < int(math.Min(3, float64(len(dataRows)))); i++ {
 		if len(dataRows[i]) > 0 {
 			log.Printf("  📋 行%d (生データ): %v", i+1, dataRows[i])
 		}
 	}
-	
+
 	for rowIdx, row := range dataRows {
 		if len(row) > dateColIdx && len(row) > productColIdx && len(row) > salesColIdx {
 			dateStr := strings.TrimSpace(row[dateColIdx])
@@ -245,7 +245,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			}
 
 			sales, convErr := strconv.ParseFloat(salesStr, 64)
-			
+
 			// 解析失敗時のログ
 			if product == "" || t == (time.Time{}) || convErr != nil {
 				if rowIdx < 5 { // 最初の5行のみ詳細エラーを記録
@@ -263,26 +263,26 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 				}
 				continue
 			}
-			
+
 			salesData = append(salesData, models.WeatherSalesData{
 				Date:      t.Format("2006-01-02"),
 				ProductID: product,
 				Sales:     sales,
 			})
 			successfulParse++
-			
+
 			// 最初の成功例をログ
 			if successfulParse == 1 {
 				log.Printf("  ✅ 初回成功: date=%s, product=%s, sales=%.2f", t.Format("2006-01-02"), product, sales)
 			}
 		} else {
 			if rowIdx < 5 {
-				parseErrors = append(parseErrors, fmt.Sprintf("行%d: 列数不足 (len=%d, 必要: date=%d, product=%d, sales=%d)", 
+				parseErrors = append(parseErrors, fmt.Sprintf("行%d: 列数不足 (len=%d, 必要: date=%d, product=%d, sales=%d)",
 					rowIdx+1, len(row), dateColIdx, productColIdx, salesColIdx))
 			}
 		}
 	}
-	
+
 	log.Printf("📊 CSV解析結果: 成功=%d件, 失敗=%d件", successfulParse, len(dataRows)-successfulParse)
 	if len(parseErrors) > 0 {
 		log.Printf("⚠️ 解析エラー例 (最大5件):")
