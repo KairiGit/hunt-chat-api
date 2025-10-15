@@ -82,6 +82,7 @@ export default function Home() {
 
   const handleFileAnalysis = async () => {
     if (!selectedFileForAnalysis) return;
+    console.log('🔵 [Client] ファイル分析開始:', selectedFileForAnalysis.name);
     setAnalysisLoading(true);
     setAnalysisError(null);
     setAnalysisWarning(null);
@@ -90,9 +91,12 @@ export default function Home() {
     formData.append('file', selectedFileForAnalysis);
 
     try {
+      console.log('🔵 [Client] APIリクエスト送信中...');
       const response = await fetch('/api/proxy/analyze-file', { method: 'POST', body: formData });
+      console.log('🔵 [Client] レスポンス受信:', response.status, response.statusText);
       if (!response.ok) {
         const errData = await response.json();
+        console.error('🔴 [Client] エラーレスポンス:', errData);
         let detailedError = errData.error || `File analysis failed: ${response.statusText}`;
         if (errData.details && errData.details.error) {
           detailedError = errData.details.error;
@@ -100,6 +104,13 @@ export default function Home() {
         throw new Error(detailedError);
       }
       const result = await response.json();
+      console.log('🔵 [Client] 分析結果:', {
+        success: result.success,
+        hasSummary: !!result.summary,
+        hasAnalysisReport: !!result.analysis_report,
+        summaryLength: result.summary?.length,
+        error: result.error
+      });
       if (result.success) {
         setAnalysisSummary(result.summary);
         
@@ -108,12 +119,16 @@ export default function Home() {
           const warningMessage = result.error 
             ? `基本分析は完了しましたが、詳細レポート生成に失敗: ${result.error}`
             : '基本分析は完了しましたが、詳細レポートは生成されませんでした。';
+          console.warn('⚠️ [Client]', warningMessage);
           setAnalysisWarning(warningMessage);
+        } else {
+          console.log('✅ [Client] 詳細レポートも正常に生成されました');
         }
       } else {
         throw new Error(result.error || 'Failed to get analysis summary.');
       }
     } catch (e) {
+      console.error('🔴 [Client] 分析エラー:', e);
       setAnalysisError(e instanceof Error ? e.message : 'An unknown error occurred during analysis.');
     } finally {
       setAnalysisLoading(false);

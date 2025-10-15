@@ -65,7 +65,7 @@ func setupApp() *gin.Engine {
 					c.Next()
 					return
 				}
-				
+
 				if providedKey != apiKey {
 					log.Printf("❌ [認証] 無効なAPI Key: %s", providedKey)
 					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
