@@ -1,7 +1,7 @@
 package handler
 
-// Build version: 2025-10-16-debug-v3
-// This comment forces Vercel to rebuild the Go backend
+// Build version: 2025-10-16-debug-v4
+// Force rebuild: Added error diagnostics to all return paths
 
 import (
 	"log"

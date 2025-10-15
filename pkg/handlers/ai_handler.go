@@ -323,9 +323,11 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		if ah.statisticsService == nil {
 			log.Printf("❌ StatisticsService が初期化されていません")
 			c.JSON(http.StatusOK, gin.H{
-				"success": true,
-				"summary": summary.String(),
-				"error":   "統計分析サービスが利用できません",
+				"success":         true,
+				"summary":         summary.String(),
+				"error":           "統計分析サービスが利用できません",
+				"backend_version": "2025-10-16-debug-v4",
+				"error_location":  "StatisticsService initialization check",
 			})
 			return
 		}
@@ -365,9 +367,13 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 				err,
 			)
 			c.JSON(http.StatusOK, gin.H{
-				"success": true,
-				"summary": summary.String(),
-				"error":   fmt.Sprintf("統計分析でエラーが発生しました。%s", diagnosticInfo),
+				"success":          true,
+				"summary":          summary.String(),
+				"error":            fmt.Sprintf("統計分析でエラーが発生しました。%s", diagnosticInfo),
+				"backend_version":  "2025-10-16-debug-v4",
+				"error_location":   "CreateAnalysisReport",
+				"sales_data_count": len(salesData),
+				"error_detail":     err.Error(),
 			})
 			return
 		} else {
@@ -406,7 +412,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		"success":          true,
 		"summary":          summary.String(),
 		"sales_data_count": len(salesData),        // デバッグ用
-		"backend_version":  "2025-10-16-debug-v3", // 🔍 バージョン確認用
+		"backend_version":  "2025-10-16-debug-v4", // 🔍 バージョン確認用
 		"debug": gin.H{ // 🔍 デバッグ情報を追加
 			"header":            header,
 			"date_col_index":    dateColIdx,
