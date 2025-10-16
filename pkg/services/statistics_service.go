@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"hunt-chat-api/pkg/models"
+
+	"github.com/google/uuid"
 )
 
 // StatisticsService 統計分析サービス
@@ -433,7 +435,7 @@ func (s *StatisticsService) CreateAnalysisReport(
 	recommendations := s.generateRecommendations(correlations, regression)
 
 	report := &models.AnalysisReport{
-		ReportID:        fmt.Sprintf("RPT-%d", time.Now().Unix()),
+		ReportID:        uuid.New().String(),
 		FileName:        fileName,
 		AnalysisDate:    time.Now().Format(time.RFC3339),
 		DataPoints:      len(salesData),

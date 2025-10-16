@@ -7,12 +7,16 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
 
-    // プレビュー環境では VERCEL_URL を、本番環境では GO_BACKEND_URL を使用
-    // VERCEL_ENV が 'production' の場合のみ GO_BACKEND_URL を優先
     const isProduction = process.env.VERCEL_ENV === 'production';
-    const baseUrl = isProduction && process.env.GO_BACKEND_URL 
-      ? process.env.GO_BACKEND_URL 
-      : `https://${process.env.VERCEL_URL}`;
+
+    let baseUrl: string;
+    if (process.env.GO_BACKEND_URL) {
+      baseUrl = process.env.GO_BACKEND_URL;
+    } else if (process.env.VERCEL_URL) {
+      baseUrl = `https://${process.env.VERCEL_URL}`;
+    } else {
+      baseUrl = 'http://localhost:8080'; // Fallback for local development
+    }
     
     targetUrl = `${baseUrl}/api/v1/ai/analyze-file`;
     

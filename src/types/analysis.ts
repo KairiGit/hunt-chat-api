@@ -1,5 +1,16 @@
 // 分析レポートの型定義
 
+export interface AnomalyDetection {
+  date: string;
+  actual_value: number;
+  expected_value: number;
+  deviation: number;
+  z_score: number;
+  anomaly_type: string;
+  severity: string;
+  ai_question?: string;
+}
+
 export interface CorrelationResult {
   factor: string;
   correlation_coef: number;
@@ -29,6 +40,7 @@ export interface AnalysisReport {
   regression: RegressionResult | null; // nullを許容
   ai_insights: string;
   recommendations: string[];
+  anomalies: AnomalyDetection[];
 }
 
 export interface AnalysisResponse {
@@ -48,4 +60,10 @@ export interface AnalysisResponse {
     first_3_rows: string[][];
     parse_errors: string[];
   };
+}
+
+export interface AnalysisReportHeader {
+  report_id: string;
+  file_name: string;
+  analysis_date: string;
 }

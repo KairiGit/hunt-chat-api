@@ -379,6 +379,24 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		} else {
 			analysisReport = report
 
+			// === 異常検知の実行 ===
+			var salesFloats []float64
+			var datesStrings []string
+			for _, sd := range salesData {
+				salesFloats = append(salesFloats, sd.Sales)
+				datesStrings = append(datesStrings, sd.Date)
+			}
+
+			if len(salesFloats) > 0 {
+				detectedAnomalies := ah.statisticsService.DetectAnomalies(salesFloats, datesStrings)
+				// 各異常に対してAIが質問を生成
+				for i := range detectedAnomalies {
+					detectedAnomalies[i].AIQuestion = ah.statisticsService.GenerateAIQuestion(detectedAnomalies[i])
+				}
+				analysisReport.Anomalies = detectedAnomalies
+				log.Printf("📈 %d件の異常を検知し、レポートに追加しました", len(detectedAnomalies))
+			}
+
 			// レポート内容をログ出力（デバッグ用）
 			log.Printf("📊 分析レポート作成完了:")
 			log.Printf("  - レポートID: %s", report.ReportID)
@@ -397,7 +415,21 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			go func() {
 				ctx := context.Background()
 				reportJSON, _ := json.Marshal(report)
-				err := ah.vectorStoreService.SaveAnalysisReport(ctx, string(reportJSON), "sales_weather_analysis")
+
+				metadata := map[string]interface{}{
+					"type":          "analysis_report",
+					"file_name":     report.FileName,
+					"analysis_date": report.AnalysisDate,
+				}
+
+				err := ah.vectorStoreService.StoreDocument(
+					ctx,
+					"hunt_chat_documents",
+					report.ReportID,
+					string(reportJSON),
+					metadata,
+				)
+
 				if err != nil {
 					log.Printf("分析レポートのQdrant保存に失敗: %v", err)
 				} else {
@@ -1512,5 +1544,91 @@ func (ah *AIHandler) DeleteAllAnomalyResponses(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "すべての学習データを削除しました",
+	})
+}
+
+// ListAnalysisReports は保存されているすべての分析レポートのヘッダーを返します
+func (ah *AIHandler) ListAnalysisReports(c *gin.Context) {
+	headers, err := ah.vectorStoreService.GetAllAnalysisReportHeaders(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "レポート一覧の取得に失敗しました: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"reports": headers,
+	})
+}
+
+// GetAnalysisReport はIDで指定された単一の分析レポートを返します
+func (ah *AIHandler) GetAnalysisReport(c *gin.Context) {
+	reportID := c.Query("id")
+	if reportID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "レポートIDが指定されていません",
+		})
+		return
+	}
+
+	report, err := ah.vectorStoreService.GetAnalysisReportByID(c.Request.Context(), reportID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   fmt.Sprintf("レポートの取得に失敗しました: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"report":  report,
+	})
+}
+
+// DeleteAnalysisReport はIDで指定された単一の分析レポートを削除します
+func (ah *AIHandler) DeleteAnalysisReport(c *gin.Context) {
+	reportID := c.Query("id")
+	if reportID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "レポートIDが指定されていません",
+		})
+		return
+	}
+
+	err := ah.vectorStoreService.DeletePoint(c.Request.Context(), "hunt_chat_documents", reportID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   fmt.Sprintf("レポートの削除に失敗しました: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "レポートが正常に削除されました",
+	})
+}
+
+// DeleteAllAnalysisReports はすべての分析レポートを削除します
+func (ah *AIHandler) DeleteAllAnalysisReports(c *gin.Context) {
+	err := ah.vectorStoreService.DeleteAllAnalysisReports(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   fmt.Sprintf("全レポートの削除に失敗しました: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "すべての分析レポートが正常に削除されました",
 	})
 }

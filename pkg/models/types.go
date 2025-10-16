@@ -153,6 +153,14 @@ type AnalysisReport struct {
 	Regression      *RegressionResult   `json:"regression,omitempty"`
 	AIInsights      string              `json:"ai_insights"`
 	Recommendations []string            `json:"recommendations"`
+	Anomalies       []AnomalyDetection  `json:"anomalies"`
+}
+
+// AnalysisReportHeader represents the header information of an analysis report
+type AnalysisReportHeader struct {
+	ReportID     string `json:"report_id"`
+	FileName     string `json:"file_name"`
+	AnalysisDate string `json:"analysis_date"`
 }
 
 // WeatherSalesData represents a single data point combining weather and sales

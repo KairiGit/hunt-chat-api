@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"hunt-chat-api/pkg/models"
@@ -276,6 +277,134 @@ func (s *VectorStoreService) SearchAnalysisReports(ctx context.Context, query st
 
 	log.Printf("分析レポート検索: '%s' に類似した %d 件を取得", query, len(searchResult.GetResult()))
 	return searchResult.GetResult(), nil
+}
+
+// GetAllAnalysisReportHeaders はすべての分析レポートのヘッダー情報を取得します
+func (s *VectorStoreService) GetAllAnalysisReportHeaders(ctx context.Context) ([]models.AnalysisReportHeader, error) {
+	collectionName := "hunt_chat_documents"
+	points, err := s.ScrollAllPoints(ctx, collectionName, 1000) // 最大1000件まで取得
+	if err != nil {
+		return nil, fmt.Errorf("レポートの取得に失敗: %w", err)
+	}
+
+	var headers []models.AnalysisReportHeader
+	for _, point := range points {
+		if point.Payload["type"].GetStringValue() == "analysis_report" {
+			// textペイロードから完全なレポートJSONを取得
+			reportJSON := point.Payload["text"].GetStringValue()
+			var report models.AnalysisReport
+			if err := json.Unmarshal([]byte(reportJSON), &report); err == nil {
+				headers = append(headers, models.AnalysisReportHeader{
+					ReportID:     report.ReportID,
+					FileName:     report.FileName,
+					AnalysisDate: report.AnalysisDate,
+				})
+			} else {
+				log.Printf("レポートJSONのパースに失敗: %v", err)
+			}
+		}
+	}
+
+	// 日付の降順（新しいものが先）にソート
+	sort.Slice(headers, func(i, j int) bool {
+		t1, _ := time.Parse(time.RFC3339, headers[i].AnalysisDate)
+		t2, _ := time.Parse(time.RFC3339, headers[j].AnalysisDate)
+		return t1.After(t2)
+	})
+
+	log.Printf("%d件の分析レポートヘッダーを取得しました", len(headers))
+	return headers, nil
+}
+
+// GetAnalysisReportByID はIDで単一の分析レポートを取得します
+func (s *VectorStoreService) GetAnalysisReportByID(ctx context.Context, reportID string) (*models.AnalysisReport, error) {
+	collectionName := "hunt_chat_documents"
+
+	// IDでフィルタリングしてScrollで取得
+	scrollResult, err := s.qdrantClient.Scroll(ctx, &qdrant.ScrollPoints{
+		CollectionName: collectionName,
+		Filter: &qdrant.Filter{
+			Must: []*qdrant.Condition{
+				{
+					ConditionOneOf: &qdrant.Condition_HasId{
+						HasId: &qdrant.HasIdCondition{
+							HasId: []*qdrant.PointId{
+								{PointIdOptions: &qdrant.PointId_Uuid{Uuid: reportID}},
+							},
+						},
+					},
+				},
+			},
+		},
+		Limit:          func(u uint32) *uint32 { return &u }(1),
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("Qdrantからのポイント取得に失敗: %w", err)
+	}
+
+	if len(scrollResult.GetResult()) == 0 {
+		return nil, fmt.Errorf("レポートID '%s' が見つかりません", reportID)
+	}
+
+	point := scrollResult.GetResult()[0]
+	if point.Payload["type"].GetStringValue() != "analysis_report" {
+		return nil, fmt.Errorf("ポイント '%s' は分析レポートではありません", reportID)
+	}
+
+	reportJSON := point.Payload["text"].GetStringValue()
+	var report models.AnalysisReport
+	if err := json.Unmarshal([]byte(reportJSON), &report); err != nil {
+		return nil, fmt.Errorf("レポートJSONのパースに失敗: %w", err)
+	}
+
+	log.Printf("レポート '%s' を取得しました", reportID)
+	return &report, nil
+}
+
+// DeleteAllAnalysisReports はすべての分析レポートを削除します
+func (s *VectorStoreService) DeleteAllAnalysisReports(ctx context.Context) error {
+	collectionName := "hunt_chat_documents"
+	points, err := s.ScrollAllPoints(ctx, collectionName, 10000) // Adjust limit as needed
+	if err != nil {
+		return fmt.Errorf("レポートの取得に失敗: %w", err)
+	}
+
+	var idsToDelete []*qdrant.PointId
+	for _, point := range points {
+		if point.Payload == nil {
+			continue
+		}
+		if payloadType, ok := point.Payload["type"]; ok && payloadType != nil {
+			if payloadType.GetStringValue() == "analysis_report" {
+				idsToDelete = append(idsToDelete, point.Id)
+			}
+		}
+	}
+
+	if len(idsToDelete) == 0 {
+		log.Println("削除対象の分析レポートはありませんでした")
+		return nil
+	}
+
+	waitDelete := true
+	_, err = s.qdrantClient.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: collectionName,
+		Wait:           &waitDelete,
+		Points: &qdrant.PointsSelector{
+			PointsSelectorOneOf: &qdrant.PointsSelector_Points{
+				Points: &qdrant.PointsIdsList{Ids: idsToDelete},
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("Qdrantからの分析レポート削除に失敗: %w", err)
+	}
+
+	log.Printf("%d件の分析レポートを削除しました", len(idsToDelete))
+	return nil
 }
 
 // StoreDocument は指定されたコレクションにドキュメントを保存（コレクション名を指定可能）

@@ -1,27 +1,159 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAppContext } from '@/contexts/AppContext';
 import { AnalysisReportView } from '@/components/analysis/AnalysisReportView';
-import type { AnalysisReport, AnalysisResponse } from '@/types/analysis';
+import type { AnalysisReport, AnalysisResponse, AnalysisReportHeader } from '@/types/analysis';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function AnalysisPage() {
   const { analysisSummary, setAnalysisSummary } = useAppContext();
+  const { toast } = useToast();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-  const [analysisReport, setAnalysisReport] = useState<AnalysisReport | null>(null);
+  
+  const [reportList, setReportList] = useState<AnalysisReportHeader[]>([]);
+  const [isLoadingList, setIsLoadingList] = useState(true);
+  
+  const [selectedReport, setSelectedReport] = useState<AnalysisReport | null>(null);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
+
+  const [isReportDeleteDialogOpen, setReportDeleteDialogOpen] = useState(false);
+  const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
+  const [isDeleteAllReportsDialogOpen, setDeleteAllReportsDialogOpen] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchReportList = async () => {
+    setIsLoadingList(true);
+    try {
+      const response = await fetch('/api/proxy/analysis-reports');
+      const data = await response.json();
+      if (data.success) {
+        setReportList(data.reports || []);
+      } else {
+        throw new Error(data.error || 'Failed to fetch report list.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error fetching reports.');
+    } finally {
+      setIsLoadingList(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReportList();
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  const handleReportSelect = async (reportId: string) => {
+    if (selectedReport?.report_id === reportId) {
+      setSelectedReport(null);
+      return;
+    }
+
+    setIsLoadingReport(true);
+    setSelectedReport(null);
+    setError(null);
+    try {
+      const response = await fetch(`/api/proxy/analysis-report?id=${reportId}`);
+      const data = await response.json();
+      if (data.success && data.report) {
+        setSelectedReport(data.report);
+      } else {
+        throw new Error(data.error || 'Failed to fetch report details.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error fetching report details.');
+    } finally {
+      setIsLoadingReport(false);
+    }
+  };
+
+  const openDeleteDialog = (reportId: string) => {
+    setReportIdToDelete(reportId);
+    setReportDeleteDialogOpen(true);
+  };
+
+  const handleDeleteReport = async () => {
+    if (!reportIdToDelete) return;
+
+    try {
+      const response = await fetch(`/api/proxy/analysis-report?id=${reportIdToDelete}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to delete report.');
+      }
+
+      toast({
+        variant: "success",
+        title: "✅ 削除完了",
+        description: "レポートを削除しました。",
+      });
+
+      setReportList(reportList.filter(r => r.report_id !== reportIdToDelete));
+      if (selectedReport?.report_id === reportIdToDelete) {
+        setSelectedReport(null);
+      }
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error deleting report.');
+    } finally {
+      setReportIdToDelete(null);
+      setReportDeleteDialogOpen(false);
+    }
+  };
+
+  const handleDeleteAllReports = async () => {
+    try {
+      const response = await fetch('/api/proxy/analysis-reports', {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to delete all reports.');
+      }
+
+      toast({
+        variant: "success",
+        title: "✅ 全件削除完了",
+        description: "すべての分析レポートを削除しました。",
+      });
+
+      setReportList([]);
+      setSelectedReport(null);
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error deleting all reports.');
+    } finally {
+      setDeleteAllReportsDialogOpen(false);
     }
   };
 
@@ -32,7 +164,7 @@ export default function AnalysisPage() {
     setError(null);
     setWarning(null);
     setAnalysisSummary('');
-    setAnalysisReport(null);
+    setSelectedReport(null);
     const formData = new FormData();
     formData.append('file', selectedFile);
 
@@ -53,48 +185,20 @@ export default function AnalysisPage() {
 
       const result: AnalysisResponse = await response.json();
       
-      // 🔍 デバッグ情報をコンソールに出力
-      console.log('🔵 [Client] レスポンス全体:', result);
-      console.log('🔵 [Client] デバッグ情報:', result.debug);
-      if (result.debug) {
-        console.log('📋 ヘッダー:', result.debug.header);
-        console.log('📊 列インデックス:', {
-          date: result.debug.date_col_index,
-          product: result.debug.product_col_index,
-          sales: result.debug.sales_col_index,
-        });
-        console.log('📈 解析結果:', {
-          total: result.debug.total_rows,
-          successful: result.debug.successful_parses,
-          failed: result.debug.failed_parses,
-        });
-        if (result.debug.parse_errors && result.debug.parse_errors.length > 0) {
-          console.log('⚠️ 解析エラー:', result.debug.parse_errors);
-        }
-        if (result.debug.first_3_rows) {
-          console.log('📋 最初の3行:', result.debug.first_3_rows);
-        }
-      }
-      
-      // エラーメッセージがある場合
       if (result.error) {
         throw new Error(result.error);
       }
       
-      // 成功時の処理
       if (result.success) {
         setAnalysisSummary(result.summary || '');
-        
-        // analysis_reportがある場合のみ設定
         if (result.analysis_report) {
-          setAnalysisReport(result.analysis_report);
+          setSelectedReport(result.analysis_report);
+          fetchReportList();
         } else {
-          // レポートがない場合は警告を表示（より詳細な情報を含める）
           const warningMessage = result.error 
             ? `詳細レポートの生成に失敗しました。${result.error}`
             : '基本的な分析は完了しましたが、詳細レポートの生成に失敗しました。データ量や気象データの取得に問題がある可能性があります。';
           setWarning(warningMessage);
-          console.warn('分析は成功しましたが、詳細レポートが生成されませんでした', result);
         }
       } else {
         throw new Error(result.summary || 'Failed to get analysis summary.');
@@ -139,6 +243,64 @@ export default function AnalysisPage() {
         </Card>
       )}
 
+      {/* レポート一覧 */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold">② 過去の分析レポート</h2>
+          {reportList.length > 0 && (
+            <Button variant="destructive" size="sm" onClick={() => setDeleteAllReportsDialogOpen(true)}>
+              全レポートを削除
+            </Button>
+          )}
+        </div>
+        {isLoadingList ? (
+          <p>レポート一覧を読み込み中...</p>
+        ) : reportList.length === 0 ? (
+          <p className="text-sm text-muted-foreground">保存されているレポートはありません。</p>
+        ) : (
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ファイル名</TableHead>
+                    <TableHead>分析日時</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reportList.map((report) => (
+                    <TableRow 
+                      key={report.report_id} 
+                      className={`cursor-pointer ${selectedReport?.report_id === report.report_id ? 'bg-muted/50' : 'hover:bg-muted/50'}`}>
+                      <TableCell 
+                        className="font-medium"
+                        onClick={() => handleReportSelect(report.report_id)}>
+                          {report.file_name}
+                      </TableCell>
+                      <TableCell onClick={() => handleReportSelect(report.report_id)}>
+                        {new Date(report.analysis_date).toLocaleString('ja-JP')}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation(); // Prevent row click
+                            openDeleteDialog(report.report_id);
+                          }}>
+                          🗑️
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       {warning && (
         <Card className="max-w-2xl bg-yellow-50 dark:bg-yellow-950 border-yellow-500">
           <CardHeader>
@@ -150,35 +312,57 @@ export default function AnalysisPage() {
         </Card>
       )}
 
-      {/* サマリー表示（レポートがない場合も表示） */}
-      {analysisSummary && !analysisReport && (
-        <Card className="max-w-4xl">
-          <CardHeader>
-            <CardTitle>📊 基本分析結果</CardTitle>
-            <CardDescription>
-              ファイルの基本的な分析が完了しました
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <pre className="whitespace-pre-wrap text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-md overflow-auto max-h-96">
-              {analysisSummary}
-            </pre>
-          </CardContent>
-        </Card>
-      )}
-
       {/* 詳細分析レポート表示 */}
-      {analysisReport && (
+      {isLoadingReport && <p>レポート詳細を読み込み中...</p>}
+      
+      {selectedReport && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold">② 分析レポート</h2>
+            <h2 className="text-xl font-bold">③ 分析レポート詳細</h2>
             <span className="text-sm text-muted-foreground">
               この内容はチャットページで引き継がれます
             </span>
           </div>
-          <AnalysisReportView report={analysisReport} />
+          <AnalysisReportView report={selectedReport} />
         </div>
       )}
+
+      {/* 個別レポート削除ダイアログ */}
+      <AlertDialog open={isReportDeleteDialogOpen} onOpenChange={setReportDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>本当にこのレポートを削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              この操作は取り消せません。レポートは完全に削除されます。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteReport} className="bg-red-500 hover:bg-red-600">
+              削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 全レポート削除ダイアログ */}
+      <AlertDialog open={isDeleteAllReportsDialogOpen} onOpenChange={setDeleteAllReportsDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>本当によろしいですか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              すべての分析レポートがデータベースから完全に削除されます。この操作は取り消せません。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteAllReports} className="bg-red-500 hover:bg-red-600">
+              すべて削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

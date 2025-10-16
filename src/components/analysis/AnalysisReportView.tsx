@@ -5,6 +5,16 @@ interface AnalysisReportViewProps {
   report: AnalysisReport;
 }
 
+// 深刻度に応じて色を返すヘルパー関数
+const getSeverityColor = (severity: string) => {
+  switch (severity) {
+    case 'critical': return 'bg-red-500';
+    case 'high': return 'bg-orange-500';
+    case 'medium': return 'bg-yellow-500';
+    default: return 'bg-blue-500';
+  }
+};
+
 export function AnalysisReportView({ report }: AnalysisReportViewProps) {
   return (
     <div className="space-y-6">
@@ -42,6 +52,51 @@ export function AnalysisReportView({ report }: AnalysisReportViewProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* 異常検知結果 */}
+      {report.anomalies && report.anomalies.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>🔍 検出された異常</CardTitle>
+            <CardDescription>
+              AIが質問を生成しました。AI学習ページで回答することで学習データになります。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {report.anomalies.map((anomaly, index) => (
+                <div
+                  key={index}
+                  className={`p-4 rounded-lg border-2 border-gray-200`}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`px-2 py-1 rounded text-xs text-white ${getSeverityColor(anomaly.severity)}`}>
+                          {anomaly.severity.toUpperCase()}
+                        </span>
+                        <span className="text-sm text-gray-600">{anomaly.date}</span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="font-semibold">{anomaly.anomaly_type}</span>
+                        <span className="text-gray-600 ml-2">
+                          実績: {anomaly.actual_value.toFixed(0)} (期待値: {anomaly.expected_value.toFixed(0)})
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {anomaly.ai_question && (
+                    <div className="mt-2 p-3 bg-blue-50 rounded">
+                      <div className="text-sm font-medium text-blue-900 mb-1">💬 AIの質問:</div>
+                      <div className="text-sm text-blue-800">{anomaly.ai_question}</div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 統計サマリー */}
       <Card>
