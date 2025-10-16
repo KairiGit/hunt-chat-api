@@ -20,6 +20,38 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Running Dependencies
+
+This project requires a Qdrant vector database instance.
+
+### Running Qdrant with Docker
+
+You can run a local Qdrant instance using Docker.
+
+**1. Start Qdrant:**
+
+This command will start a Qdrant container, map the necessary ports, and mount a local directory (`qdrant_storage`) for data persistence.
+
+```bash
+docker run -d --name qdrant_db -p 6333:6333 -p 6334:6334 -v "$(pwd)/qdrant_storage:/qdrant/storage" qdrant/qdrant
+```
+
+**2. Stop Qdrant:**
+
+To stop the container, run:
+
+```bash
+docker stop qdrant_db
+```
+
+**3. Restart Qdrant:**
+
+To restart a stopped container, run:
+
+```bash
+docker start qdrant_db
+```
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
