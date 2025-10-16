@@ -10,3 +10,9 @@ export async function GET(request: Request) {
     searchParams,
   });
 }
+
+export async function DELETE() {
+  return proxyRequest('/api/v1/ai/anomaly-responses', {
+    method: 'DELETE',
+  });
+}

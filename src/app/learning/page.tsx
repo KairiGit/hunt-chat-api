@@ -183,6 +183,67 @@ export default function LearningPage() {
     }
   };
 
+  // 回答を削除
+  const deleteResponse = async (responseId: string) => {
+    if (!confirm('この回答を削除しますか？')) return;
+
+    try {
+      const response = await fetch(`/api/proxy/anomaly-response/${responseId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('削除に失敗しました');
+
+      toast({
+        variant: "success",
+        title: "✅ 削除完了",
+        description: "回答を削除しました",
+      });
+
+      // リストを再読み込み
+      loadResponses();
+      loadInsights();
+    } catch (error) {
+      console.error('Error:', error);
+      toast({
+        variant: "destructive",
+        title: "エラー",
+        description: "削除中にエラーが発生しました",
+      });
+    }
+  };
+
+  // すべての回答を削除
+  const deleteAllResponses = async () => {
+    if (!confirm('すべての学習データを削除しますか？この操作は取り消せません。')) return;
+    if (!confirm('本当によろしいですか？AIの学習内容がすべて失われます。')) return;
+
+    try {
+      const response = await fetch('/api/proxy/anomaly-responses', {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('削除に失敗しました');
+
+      toast({
+        variant: "success",
+        title: "✅ 削除完了",
+        description: "すべての学習データを削除しました",
+      });
+
+      // リストをクリア
+      setResponses([]);
+      setInsights([]);
+    } catch (error) {
+      console.error('Error:', error);
+      toast({
+        variant: "destructive",
+        title: "エラー",
+        description: "削除中にエラーが発生しました",
+      });
+    }
+  };
+
   // 学習洞察を取得
   const loadInsights = async () => {
     setIsLoadingInsights(true);
@@ -427,8 +488,21 @@ export default function LearningPage() {
             {/* 回答履歴 */}
             <Card>
               <CardHeader>
-                <CardTitle>📝 回答履歴</CardTitle>
-                <CardDescription>過去の回答一覧（最新50件）</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>📝 回答履歴</CardTitle>
+                    <CardDescription>過去の回答一覧（最新50件）</CardDescription>
+                  </div>
+                  {responses.length > 0 && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={deleteAllResponses}
+                    >
+                      🗑️ すべて削除
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 {isLoadingResponses ? (
@@ -440,19 +514,28 @@ export default function LearningPage() {
                     {responses.map((response) => (
                       <div
                         key={response.response_id}
-                        className="p-3 bg-gray-50 rounded-lg text-sm"
+                        className="p-3 bg-gray-50 rounded-lg text-sm hover:bg-gray-100 transition-colors"
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-semibold">{response.anomaly_date}</span>
-                          <div className="flex gap-1">
-                            {response.tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded"
-                              >
-                                {tag}
-                              </span>
-                            ))}
+                          <div className="flex items-center gap-2">
+                            <div className="flex gap-1">
+                              {response.tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                            <button
+                              onClick={() => deleteResponse(response.response_id)}
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors"
+                              title="削除"
+                            >
+                              🗑️
+                            </button>
                           </div>
                         </div>
                         <div className="text-gray-600 text-xs mb-1">

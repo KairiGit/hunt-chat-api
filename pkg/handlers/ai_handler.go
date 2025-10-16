@@ -1445,3 +1445,72 @@ func getFloatFromPayload(payload map[string]*qdrant.Value, key string) float64 {
 	}
 	return 0
 }
+
+// DeleteAnomalyResponse 異常回答を削除
+func (ah *AIHandler) DeleteAnomalyResponse(c *gin.Context) {
+	responseID := c.Param("id")
+	if responseID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "response_idが指定されていません",
+		})
+		return
+	}
+
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "ベクトルストアサービスが利用できません",
+		})
+		return
+	}
+
+	// Qdrantから削除
+	collectionName := "anomaly_responses"
+	err := ah.vectorStoreService.DeletePoint(context.Background(), collectionName, responseID)
+
+	if err != nil {
+		log.Printf("回答の削除に失敗: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "回答の削除に失敗しました",
+		})
+		return
+	}
+
+	log.Printf("✅ 回答を削除しました: %s", responseID)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "回答を削除しました",
+	})
+}
+
+// DeleteAllAnomalyResponses すべての異常回答を削除（管理者用）
+func (ah *AIHandler) DeleteAllAnomalyResponses(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "ベクトルストアサービスが利用できません",
+		})
+		return
+	}
+
+	// コレクションを削除して再作成
+	collectionName := "anomaly_responses"
+	err := ah.vectorStoreService.RecreateCollection(context.Background(), collectionName)
+
+	if err != nil {
+		log.Printf("コレクションの再作成に失敗: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "データの削除に失敗しました",
+		})
+		return
+	}
+
+	log.Printf("✅ すべての回答を削除しました")
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "すべての学習データを削除しました",
+	})
+}

@@ -397,6 +397,81 @@ func (s *VectorStoreService) ScrollAllPoints(ctx context.Context, collectionName
 	return scrollResult.GetResult(), nil
 }
 
+// DeletePoint 指定したIDのポイントを削除
+func (s *VectorStoreService) DeletePoint(ctx context.Context, collectionName string, pointID string) error {
+	// コレクションの存在を確認
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return fmt.Errorf("コレクションの確認に失敗: %w", err)
+	}
+
+	waitDelete := true
+	_, err := s.qdrantClient.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: collectionName,
+		Wait:           &waitDelete,
+		Points: &qdrant.PointsSelector{
+			PointsSelectorOneOf: &qdrant.PointsSelector_Points{
+				Points: &qdrant.PointsIdsList{
+					Ids: []*qdrant.PointId{
+						{
+							PointIdOptions: &qdrant.PointId_Uuid{
+								Uuid: pointID,
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("Qdrantからのポイント削除に失敗: %w", err)
+	}
+
+	log.Printf("ポイント '%s' をコレクション '%s' から削除しました", pointID, collectionName)
+	return nil
+}
+
+// RecreateCollection コレクションを削除して再作成（全データ削除）
+func (s *VectorStoreService) RecreateCollection(ctx context.Context, collectionName string) error {
+	// コレクションを削除
+	deleteCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	_, err := s.qdrantCollectionsClient.Delete(deleteCtx, &qdrant.DeleteCollection{
+		CollectionName: collectionName,
+	})
+
+	if err != nil {
+		log.Printf("警告: コレクション削除に失敗（続行します）: %v", err)
+	} else {
+		log.Printf("コレクション '%s' を削除しました", collectionName)
+	}
+
+	// コレクションを再作成
+	createCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	vectorSize := uint64(1536) // text-embedding-3-smallの次元数
+	_, err = s.qdrantCollectionsClient.Create(createCtx, &qdrant.CreateCollection{
+		CollectionName: collectionName,
+		VectorsConfig: &qdrant.VectorsConfig{
+			Config: &qdrant.VectorsConfig_Params{
+				Params: &qdrant.VectorParams{
+					Size:     vectorSize,
+					Distance: qdrant.Distance_Cosine,
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("コレクション再作成に失敗: %w", err)
+	}
+
+	log.Printf("コレクション '%s' を再作成しました", collectionName)
+	return nil
+}
+
 // ensureCollection コレクションが存在することを確認し、なければ作成
 func (s *VectorStoreService) ensureCollection(ctx context.Context, collectionName string) error {
 	log.Printf("コレクション '%s' の存在を確認中...", collectionName)

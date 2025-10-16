@@ -1,7 +1,7 @@
 package handler
 
-// Build version: 2025-10-16-anomaly-save-fix-v1
-// Vercel: Fixed anomaly-response POST endpoint and Qdrant filter issues
+// Build version: 2025-10-16-delete-response-v1
+// Vercel: Added delete endpoints for anomaly responses
 
 import (
 	"log"
@@ -156,10 +156,12 @@ func setupApp() *gin.Engine {
 				})
 
 				// 異常検知・学習機能API
-				ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales) // 異常検知実行
-				ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)    // 異常対応保存 (単数形)
-				ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)    // 異常対応履歴取得 (複数形)
-				ai.GET("/learning-insights", aiHandler.GetLearningInsights)    // 学習洞察取得
+				ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)       // 異常検知実行
+				ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)          // 異常対応保存 (単数形)
+				ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)          // 異常対応履歴取得 (複数形)
+				ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)  // 異常対応削除
+				ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses) // すべての異常対応削除
+				ai.GET("/learning-insights", aiHandler.GetLearningInsights)          // 学習洞察取得
 			}
 		}
 

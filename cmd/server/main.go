@@ -133,17 +133,17 @@ func main() {
 			ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
 			ai.POST("/chat-input", aiHandler.ChatInput)
 			ai.POST("/analyze-file", aiHandler.AnalyzeFile)
-			ai.POST("/predict-sales", aiHandler.PredictSales)              // 売上予測API
-			ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales) // 異常検知API
-			ai.POST("/forecast-product", aiHandler.ForecastProductDemand)  // 製品別需要予測API
-			ai.POST("/analyze-weekly", aiHandler.AnalyzeWeeklySales)       // 週次分析API
-			ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)    // 異常への回答保存API
-			ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)    // 回答履歴取得API
-			ai.GET("/learning-insights", aiHandler.GetLearningInsights)    // AI学習洞察取得API
+			ai.POST("/predict-sales", aiHandler.PredictSales)                    // 売上予測API
+			ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)       // 異常検知API
+			ai.POST("/forecast-product", aiHandler.ForecastProductDemand)        // 製品別需要予測API
+			ai.POST("/analyze-weekly", aiHandler.AnalyzeWeeklySales)             // 週次分析API
+			ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)          // 異常への回答保存API
+			ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)          // 回答履歴取得API
+			ai.GET("/learning-insights", aiHandler.GetLearningInsights)          // AI学習洞察取得API
+			ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)  // 回答削除API
+			ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses) // 全回答削除API
 		}
-	}
-
-	// サーバー起動
+	} // サーバー起動
 	log.Println("Starting HUNT Chat-API server on :8080")
 	if err := r.Run(":8080"); err != nil {
 		log.Fatal("Failed to start server:", err)
