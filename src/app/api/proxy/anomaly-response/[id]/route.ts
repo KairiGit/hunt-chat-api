@@ -4,10 +4,10 @@ const GO_BACKEND_URL = process.env.GO_BACKEND_URL || 'https://hunt-chat-api.verc
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params;
+    const { id } = params;
     
     const apiUrl = `${GO_BACKEND_URL}/api/v1/ai/anomaly-response/${id}`;
     
