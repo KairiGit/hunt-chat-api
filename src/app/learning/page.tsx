@@ -189,7 +189,7 @@ export default function LearningPage() {
 
     try {
       const response = await fetch(`/api/proxy/anomaly-response/${responseId}`, {
-        method: 'DELETE',
+        method: 'POST',
       });
 
       if (!response.ok) throw new Error('削除に失敗しました');
