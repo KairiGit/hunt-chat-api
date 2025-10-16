@@ -57,6 +57,13 @@ func findIndex(slice []string, candidates ...string) int {
 
 // AnalyzeFile: Logic-based file analysis with monthly aggregation
 func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	c.Request.ParseMultipartForm(10 << 20) // 10MB limit
 
 	file, fileHeader, err := c.Request.FormFile("file")
@@ -489,6 +496,13 @@ type ChatInputRequest struct {
 }
 
 func (ah *AIHandler) ChatInput(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	var req ChatInputRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "リクエストの形式が正しくありません: " + err.Error()})
@@ -1154,6 +1168,13 @@ func (ah *AIHandler) generateSampleHistoricalData(_ string, days int) []models.S
 
 // SaveAnomalyResponse ユーザーの異常に対する回答を保存
 func (ah *AIHandler) SaveAnomalyResponse(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	var req models.AnomalyResponseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1236,6 +1257,13 @@ func (ah *AIHandler) SaveAnomalyResponse(c *gin.Context) {
 
 // GetAnomalyResponses 保存された回答履歴を取得
 func (ah *AIHandler) GetAnomalyResponses(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	productID := c.Query("product_id")
 	limit := 100 // デフォルト
 
@@ -1319,6 +1347,13 @@ func (ah *AIHandler) GetAnomalyResponses(c *gin.Context) {
 
 // GetLearningInsights AIが学習した洞察を取得
 func (ah *AIHandler) GetLearningInsights(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	category := c.Query("category") // "campaign", "weather", "event", etc.
 
 	if ah.vectorStoreService == nil {
@@ -1480,6 +1515,13 @@ func getFloatFromPayload(payload map[string]*qdrant.Value, key string) float64 {
 
 // DeleteAnomalyResponse 異常回答を削除
 func (ah *AIHandler) DeleteAnomalyResponse(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	responseID := c.Param("id")
 	if responseID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1522,7 +1564,7 @@ func (ah *AIHandler) DeleteAllAnomalyResponses(c *gin.Context) {
 	if ah.vectorStoreService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"success": false,
-			"error":   "ベクトルストアサービスが利用できません",
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
 		})
 		return
 	}
@@ -1549,6 +1591,13 @@ func (ah *AIHandler) DeleteAllAnomalyResponses(c *gin.Context) {
 
 // ListAnalysisReports は保存されているすべての分析レポートのヘッダーを返します
 func (ah *AIHandler) ListAnalysisReports(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	headers, err := ah.vectorStoreService.GetAllAnalysisReportHeaders(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1566,6 +1615,13 @@ func (ah *AIHandler) ListAnalysisReports(c *gin.Context) {
 
 // GetAnalysisReport はIDで指定された単一の分析レポートを返します
 func (ah *AIHandler) GetAnalysisReport(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	reportID := c.Query("id")
 	if reportID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1592,6 +1648,13 @@ func (ah *AIHandler) GetAnalysisReport(c *gin.Context) {
 
 // DeleteAnalysisReport はIDで指定された単一の分析レポートを削除します
 func (ah *AIHandler) DeleteAnalysisReport(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	reportID := c.Query("id")
 	if reportID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1618,6 +1681,13 @@ func (ah *AIHandler) DeleteAnalysisReport(c *gin.Context) {
 
 // DeleteAllAnalysisReports はすべての分析レポートを削除します
 func (ah *AIHandler) DeleteAllAnalysisReports(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。設定を確認してください。",
+		})
+		return
+	}
 	err := ah.vectorStoreService.DeleteAllAnalysisReports(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

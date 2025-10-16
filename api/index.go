@@ -48,7 +48,11 @@ func setupApp() *gin.Engine {
 			cfg.AzureOpenAIChatDeploymentName,
 			cfg.AzureOpenAIEmbeddingDeploymentName,
 		)
-		vectorStoreService := services.NewVectorStoreService(azureOpenAIService, cfg.QdrantURL, cfg.QdrantAPIKey)
+		vectorStoreService, err := services.NewVectorStoreService(azureOpenAIService, cfg.QdrantURL, cfg.QdrantAPIKey)
+		if err != nil {
+			log.Printf("FATAL: Failed to initialize VectorStoreService in Vercel function: %v", err)
+			// The service will be nil, handlers should handle this.
+		}
 
 		// ハンドラーの初期化
 		weatherHandler := handlers.NewWeatherHandler()

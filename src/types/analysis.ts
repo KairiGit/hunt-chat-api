@@ -66,4 +66,5 @@ export interface AnalysisReportHeader {
   report_id: string;
   file_name: string;
   analysis_date: string;
+  date_range: string;
 }

@@ -39,7 +39,11 @@ func main() {
 		cfg.AzureOpenAIChatDeploymentName,
 		cfg.AzureOpenAIEmbeddingDeploymentName,
 	)
-	vectorStoreService := services.NewVectorStoreService(azureOpenAIService, cfg.QdrantURL, cfg.QdrantAPIKey)
+	vectorStoreService, err := services.NewVectorStoreService(azureOpenAIService, cfg.QdrantURL, cfg.QdrantAPIKey)
+	if err != nil {
+		log.Printf("FATAL: Failed to initialize VectorStoreService: %v", err)
+		// Continue running without vector store for now
+	}
 
 	// ハンドラーの初期化
 	weatherHandler := handlers.NewWeatherHandler()

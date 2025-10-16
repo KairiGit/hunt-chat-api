@@ -27,7 +27,7 @@ type VectorStoreService struct {
 }
 
 // NewVectorStoreService は新しいVectorStoreServiceを初期化して返します
-func NewVectorStoreService(azureOpenAIService *AzureOpenAIService, qdrantURL string, qdrantAPIKey string) *VectorStoreService {
+func NewVectorStoreService(azureOpenAIService *AzureOpenAIService, qdrantURL string, qdrantAPIKey string) (*VectorStoreService, error) {
 	// 接続オプション
 	var dialOpts []grpc.DialOption
 
@@ -54,7 +54,7 @@ func NewVectorStoreService(azureOpenAIService *AzureOpenAIService, qdrantURL str
 	// gRPC接続を確立
 	conn, err := grpc.NewClient(qdrantURL, dialOpts...)
 	if err != nil {
-		log.Fatalf("QdrantへのgRPCクライアント作成に失敗しました: %v", err)
+		return nil, fmt.Errorf("QdrantへのgRPCクライアント作成に失敗しました: %w", err)
 	}
 
 	qdrantPointsClient := qdrant.NewPointsClient(conn)
@@ -90,7 +90,7 @@ func NewVectorStoreService(azureOpenAIService *AzureOpenAIService, qdrantURL str
 	}
 
 	if listErr != nil {
-		log.Fatalf("Qdrantのコレクションリスト取得に失敗しました（リトライ上限到達）: %v", listErr)
+		return nil, fmt.Errorf("Qdrantのコレクションリスト取得に失敗しました（リトライ上限到達）: %w", listErr)
 	}
 
 	// コレクションが存在しない場合は作成
@@ -110,7 +110,7 @@ func NewVectorStoreService(azureOpenAIService *AzureOpenAIService, qdrantURL str
 			},
 		})
 		if err != nil {
-			log.Fatalf("Qdrantのコレクション作成に失敗しました: %v", err)
+			return nil, fmt.Errorf("Qdrantのコレクション作成に失敗しました: %w", err)
 		}
 		log.Printf("コレクション '%s' を作成しました。", collectionName)
 	} else {
@@ -121,7 +121,7 @@ func NewVectorStoreService(azureOpenAIService *AzureOpenAIService, qdrantURL str
 		qdrantClient:            qdrantPointsClient,
 		qdrantCollectionsClient: qdrantCollectionsClient,
 		azureOpenAIService:      azureOpenAIService,
-	}
+	}, nil
 }
 
 // Save はテキストをベクトル化し、メタデータと共にQdrantに保存します。
