@@ -166,6 +166,12 @@ func setupApp() *gin.Engine {
 				ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)  // 異常対応削除
 				ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses) // すべての異常対応削除
 				ai.GET("/learning-insights", aiHandler.GetLearningInsights)          // 学習洞察取得
+
+				// 分析レポートAPI
+				ai.GET("/analysis-reports", aiHandler.ListAnalysisReports)
+				ai.GET("/analysis-report", aiHandler.GetAnalysisReport)
+				ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)
+				ai.DELETE("/analysis-reports", aiHandler.DeleteAllAnalysisReports)
 			}
 		}
 
