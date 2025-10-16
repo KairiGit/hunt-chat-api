@@ -7,6 +7,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface AnomalyDetection {
   date: string;
@@ -58,6 +68,11 @@ export default function LearningPage() {
   const [impact, setImpact] = useState<string>('positive');
   const [impactValue, setImpactValue] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
+
+  // 削除確認ダイアログ用のState
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
+  const [responseIdToDelete, setResponseIdToDelete] = useState<string | null>(null);
 
   const availableTags = [
     'キャンペーン',
@@ -183,12 +198,18 @@ export default function LearningPage() {
     }
   };
 
+  // 削除ダイアログを開く
+  const openDeleteDialog = (responseId: string) => {
+    setResponseIdToDelete(responseId);
+    setIsDeleteDialogOpen(true);
+  };
+
   // 回答を削除
-  const deleteResponse = async (responseId: string) => {
-    if (!confirm('この回答を削除しますか？')) return;
+  const deleteResponse = async () => {
+    if (!responseIdToDelete) return;
 
     try {
-      const response = await fetch(`/api/proxy/anomaly-responses?id=${responseId}`, {
+      const response = await fetch(`/api/proxy/anomaly-responses?id=${responseIdToDelete}`, {
         method: 'DELETE',
       });
 
@@ -210,14 +231,14 @@ export default function LearningPage() {
         title: "エラー",
         description: "削除中にエラーが発生しました",
       });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setResponseIdToDelete(null);
     }
   };
 
   // すべての回答を削除
   const deleteAllResponses = async () => {
-    if (!confirm('すべての学習データを削除しますか？この操作は取り消せません。')) return;
-    if (!confirm('本当によろしいですか？AIの学習内容がすべて失われます。')) return;
-
     try {
       const response = await fetch('/api/proxy/anomaly-responses', {
         method: 'DELETE',
@@ -241,6 +262,8 @@ export default function LearningPage() {
         title: "エラー",
         description: "削除中にエラーが発生しました",
       });
+    } finally {
+      setDeleteAllDialogOpen(false);
     }
   };
 
@@ -497,7 +520,7 @@ export default function LearningPage() {
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={deleteAllResponses}
+                      onClick={() => setDeleteAllDialogOpen(true)}
                     >
                       🗑️ すべて削除
                     </Button>
@@ -520,7 +543,7 @@ export default function LearningPage() {
                           <span className="font-semibold">{response.anomaly_date}</span>
                           <div className="flex items-center gap-2">
                             <div className="flex gap-1">
-                              {response.tags.map((tag) => (
+                              {response.tags && response.tags.map((tag) => (
                                 <span
                                   key={tag}
                                   className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded"
@@ -530,7 +553,7 @@ export default function LearningPage() {
                               ))}
                             </div>
                             <button
-                              onClick={() => deleteResponse(response.response_id)}
+                              onClick={() => openDeleteDialog(response.response_id)}
                               className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors"
                               title="削除"
                             >
@@ -556,6 +579,43 @@ export default function LearningPage() {
             </Card>
           </div>
         </div>
+
+        {/* 個別削除ダイアログ */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>本当に削除しますか？</AlertDialogTitle>
+              <AlertDialogDescription>
+                この操作は取り消せません。この回答を完全に削除します。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>キャンセル</AlertDialogCancel>
+              <AlertDialogAction onClick={deleteResponse} className="bg-red-500 hover:bg-red-600">
+                削除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* 全件削除ダイアログ */}
+        <AlertDialog open={isDeleteAllDialogOpen} onOpenChange={setDeleteAllDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>本当によろしいですか？</AlertDialogTitle>
+              <AlertDialogDescription>
+                すべての学習データが完全に削除されます。この操作は取り消せません。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>キャンセル</AlertDialogCancel>
+              <AlertDialogAction onClick={deleteAllResponses} className="bg-red-500 hover:bg-red-600">
+                すべて削除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
       </div>
     </div>
   );
