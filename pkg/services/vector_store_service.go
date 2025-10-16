@@ -298,6 +298,7 @@ func (s *VectorStoreService) GetAllAnalysisReportHeaders(ctx context.Context) ([
 					ReportID:     report.ReportID,
 					FileName:     report.FileName,
 					AnalysisDate: report.AnalysisDate,
+					DateRange:    report.DateRange,
 				})
 			} else {
 				log.Printf("レポートJSONのパースに失敗: %v", err)
@@ -336,8 +337,8 @@ func (s *VectorStoreService) GetAnalysisReportByID(ctx context.Context, reportID
 				},
 			},
 		},
-		Limit:          func(u uint32) *uint32 { return &u }(1),
-		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
+		Limit:       func(u uint32) *uint32 { return &u }(1),
+		WithPayload: &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
 	})
 
 	if err != nil {

@@ -264,6 +264,7 @@ export default function AnalysisPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>ファイル名</TableHead>
+                    <TableHead>データ区間</TableHead>
                     <TableHead>分析日時</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
@@ -277,6 +278,9 @@ export default function AnalysisPage() {
                         className="font-medium"
                         onClick={() => handleReportSelect(report.report_id)}>
                           {report.file_name}
+                      </TableCell>
+                      <TableCell onClick={() => handleReportSelect(report.report_id)}>
+                        {report.date_range}
                       </TableCell>
                       <TableCell onClick={() => handleReportSelect(report.report_id)}>
                         {new Date(report.analysis_date).toLocaleString('ja-JP')}

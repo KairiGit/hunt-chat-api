@@ -161,6 +161,7 @@ type AnalysisReportHeader struct {
 	ReportID     string `json:"report_id"`
 	FileName     string `json:"file_name"`
 	AnalysisDate string `json:"analysis_date"`
+	DateRange    string `json:"date_range"`
 }
 
 // WeatherSalesData represents a single data point combining weather and sales

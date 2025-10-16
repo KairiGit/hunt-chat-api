@@ -140,10 +140,10 @@ func main() {
 			ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)          // 異常への回答保存API
 			ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)          // 回答履歴取得API
 			ai.GET("/learning-insights", aiHandler.GetLearningInsights)          // AI学習洞察取得API
-			ai.GET("/analysis-reports", aiHandler.ListAnalysisReports)          // 分析レポート一覧取得API
-			ai.DELETE("/analysis-reports", aiHandler.DeleteAllAnalysisReports)    // 全分析レポート削除API
-			ai.GET("/analysis-report", aiHandler.GetAnalysisReport)            // 分析レポート詳細取得API
-			ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)      // 分析レポート削除API
+			ai.GET("/analysis-reports", aiHandler.ListAnalysisReports)           // 分析レポート一覧取得API
+			ai.DELETE("/analysis-reports", aiHandler.DeleteAllAnalysisReports)   // 全分析レポート削除API
+			ai.GET("/analysis-report", aiHandler.GetAnalysisReport)              // 分析レポート詳細取得API
+			ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)        // 分析レポート削除API
 			ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)  // 回答削除API
 			ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses) // 全回答削除API
 		}
