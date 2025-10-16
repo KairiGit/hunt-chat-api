@@ -188,8 +188,8 @@ export default function LearningPage() {
     if (!confirm('この回答を削除しますか？')) return;
 
     try {
-      const response = await fetch(`/api/proxy/anomaly-response/${responseId}`, {
-        method: 'POST',
+      const response = await fetch(`/api/proxy/anomaly-responses?id=${responseId}`, {
+        method: 'DELETE',
       });
 
       if (!response.ok) throw new Error('削除に失敗しました');
