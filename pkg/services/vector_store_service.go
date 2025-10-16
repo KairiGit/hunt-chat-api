@@ -388,7 +388,7 @@ func (s *VectorStoreService) ScrollAllPoints(ctx context.Context, collectionName
 		Limit:          &limit,
 		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
 	})
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("Qdrantでの全件取得に失敗: %w", err)
 	}

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/components/ui/use-toast';
 
 interface AnomalyDetection {
   date: string;
@@ -42,6 +43,7 @@ interface LearningInsight {
 }
 
 export default function LearningPage() {
+  const { toast } = useToast();
   const [anomalies, setAnomalies] = useState<AnomalyDetection[]>([]);
   const [responses, setResponses] = useState<AnomalyResponse[]>([]);
   const [insights, setInsights] = useState<LearningInsight[]>([]);
@@ -97,7 +99,11 @@ export default function LearningPage() {
       setAnomalies(data.anomalies || []);
     } catch (error) {
       console.error('Error:', error);
-      alert('異常検知中にエラーが発生しました');
+      toast({
+        variant: "destructive",
+        title: "エラー",
+        description: "異常検知中にエラーが発生しました",
+      });
     } finally {
       setIsLoadingAnomalies(false);
     }
@@ -106,7 +112,11 @@ export default function LearningPage() {
   // 回答を保存
   const saveResponse = async () => {
     if (!selectedAnomaly || !answer.trim()) {
-      alert('回答を入力してください');
+      toast({
+        variant: "destructive",
+        title: "入力エラー",
+        description: "回答を入力してください",
+      });
       return;
     }
 
@@ -130,7 +140,11 @@ export default function LearningPage() {
       if (!response.ok) throw new Error('回答の保存に失敗しました');
 
       const data = await response.json();
-      alert(data.message || '回答を保存しました！');
+      toast({
+        variant: "success",
+        title: "✅ 保存完了",
+        description: data.message || "回答を保存しました。AIが学習データとして活用します。",
+      });
       
       // フォームをリセット
       setAnswer('');
@@ -143,7 +157,11 @@ export default function LearningPage() {
       loadInsights();
     } catch (error) {
       console.error('Error:', error);
-      alert('回答の保存中にエラーが発生しました');
+      toast({
+        variant: "destructive",
+        title: "エラー",
+        description: "回答の保存中にエラーが発生しました",
+      });
     } finally {
       setIsSaving(false);
     }

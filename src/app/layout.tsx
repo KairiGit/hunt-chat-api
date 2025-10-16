@@ -4,6 +4,7 @@ import Link from 'next/link';
 import "./globals.css";
 
 import { AppProvider } from '@/contexts/AppContext';
+import { Toaster } from '@/components/ui/toaster';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -108,6 +109,7 @@ export default function RootLayout({
               {children}
             </main>
           </div>
+          <Toaster />
         </AppProvider>
       </body>
     </html>
