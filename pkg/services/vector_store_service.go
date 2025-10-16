@@ -375,6 +375,28 @@ func (s *VectorStoreService) SearchWithFilter(ctx context.Context, collectionNam
 	return searchResult.GetResult(), nil
 }
 
+// ScrollAllPoints 指定したコレクションの全ポイントを取得（フィルタなし）
+func (s *VectorStoreService) ScrollAllPoints(ctx context.Context, collectionName string, limit uint32) ([]*qdrant.RetrievedPoint, error) {
+	// コレクションの存在を確認
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return nil, fmt.Errorf("コレクションの確認に失敗: %w", err)
+	}
+
+	withPayload := true
+	scrollResult, err := s.qdrantClient.Scroll(ctx, &qdrant.ScrollPoints{
+		CollectionName: collectionName,
+		Limit:          &limit,
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
+	})
+	
+	if err != nil {
+		return nil, fmt.Errorf("Qdrantでの全件取得に失敗: %w", err)
+	}
+
+	log.Printf("コレクション '%s' から %d 件取得", collectionName, len(scrollResult.GetResult()))
+	return scrollResult.GetResult(), nil
+}
+
 // ensureCollection コレクションが存在することを確認し、なければ作成
 func (s *VectorStoreService) ensureCollection(ctx context.Context, collectionName string) error {
 	log.Printf("コレクション '%s' の存在を確認中...", collectionName)
@@ -421,6 +443,7 @@ func (s *VectorStoreService) ensureCollection(ctx context.Context, collectionNam
 			return nil // エラーでも続行
 		}
 		log.Printf("コレクション '%s' を作成しました", collectionName)
+		log.Printf("📌 重要: 'type' フィールドでフィルタリングするには、Qdrantに自動インデックスが作成されます")
 	} else {
 		log.Printf("コレクション '%s' は既に存在します", collectionName)
 	}

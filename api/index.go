@@ -1,7 +1,7 @@
 package handler
 
-// Build version: 2025-10-16-anomaly-routes-v1
-// Vercel: Added anomaly detection, learning insights, and anomaly responses routes
+// Build version: 2025-10-16-anomaly-save-fix-v1
+// Vercel: Fixed anomaly-response POST endpoint and Qdrant filter issues
 
 import (
 	"log"
@@ -25,7 +25,7 @@ var (
 // サーバーレス環境では、リクエストごとに初期化が走らないようsync.Onceで一度だけ実行します。
 func setupApp() *gin.Engine {
 	once.Do(func() {
-		log.Printf("🟢 [setupApp] Initializing Gin application - anomaly-routes-v1")
+		log.Printf("🟢 [setupApp] Initializing Gin application - anomaly-save-fix-v1")
 
 		// .envファイルはVercelの環境変数設定から読み込まれるため、ここではgodotenvを呼び出しません。
 		cfg := config.LoadConfig()
@@ -84,7 +84,7 @@ func setupApp() *gin.Engine {
 
 		// ヘルスチェックエンドポイント
 		r.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "healthy", "version": "2025-10-16-anomaly-routes-v1"})
+			c.JSON(http.StatusOK, gin.H{"status": "healthy", "version": "2025-10-16-anomaly-save-fix-v1"})
 		})
 
 		// APIルートの定義
@@ -146,19 +146,20 @@ func setupApp() *gin.Engine {
 				ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
 				ai.POST("/chat-input", aiHandler.ChatInput)
 				ai.POST("/analyze-file", func(c *gin.Context) {
-					log.Printf("🟢 [api/index.go] /analyze-file エンドポイント呼び出し - Build: 2025-10-16-anomaly-routes-v1")
+					log.Printf("🟢 [api/index.go] /analyze-file エンドポイント呼び出し - Build: 2025-10-16-anomaly-save-fix-v1")
 
 					// 🔍 診断: リクエストがここまで到達していることを確認
-					c.Header("X-Backend-Version", "2025-10-16-anomaly-routes-v1")
+					c.Header("X-Backend-Version", "2025-10-16-anomaly-save-fix-v1")
 					c.Header("X-Handler-Called", "true")
 
 					aiHandler.AnalyzeFile(c)
 				})
 
 				// 異常検知・学習機能API
-				ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales) // 異常検知実行
-				ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)    // 異常対応履歴取得
-				ai.GET("/learning-insights", aiHandler.GetLearningInsights)    // 学習洞察取得
+				ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)    // 異常検知実行
+				ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)       // 異常対応保存 (単数形)
+				ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)       // 異常対応履歴取得 (複数形)
+				ai.GET("/learning-insights", aiHandler.GetLearningInsights)       // 学習洞察取得
 			}
 		}
 
@@ -174,7 +175,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🔵 [Handler] Headers: %v", r.Header)
 
 	// バージョン情報をレスポンスヘッダーに追加
-	w.Header().Set("X-Backend-Version", "2025-10-16-anomaly-routes-v1")
+	w.Header().Set("X-Backend-Version", "2025-10-16-anomaly-save-fix-v1")
 	w.Header().Set("X-Handler-Called", "true")
 
 	// Ginアプリケーションをセットアップ（初回のみ実行される）

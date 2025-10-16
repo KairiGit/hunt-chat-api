@@ -1224,47 +1224,11 @@ func (ah *AIHandler) GetAnomalyResponses(c *gin.Context) {
 	// コレクションが存在することを確認
 	collectionName := "anomaly_responses"
 
-	// Qdrantから検索
-	filter := &qdrant.Filter{
-		Must: []*qdrant.Condition{
-			{
-				ConditionOneOf: &qdrant.Condition_Field{
-					Field: &qdrant.FieldCondition{
-						Key: "type",
-						Match: &qdrant.Match{
-							MatchValue: &qdrant.Match_Keyword{
-								Keyword: "anomaly_response",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// 製品IDでフィルタ
-	if productID != "" {
-		filter.Must = append(filter.Must, &qdrant.Condition{
-			ConditionOneOf: &qdrant.Condition_Field{
-				Field: &qdrant.FieldCondition{
-					Key: "product_id",
-					Match: &qdrant.Match{
-						MatchValue: &qdrant.Match_Keyword{
-							Keyword: productID,
-						},
-					},
-				},
-			},
-		})
-	}
-
-	// ダミークエリで検索（フィルタのみ適用）
-	searchResults, err := ah.vectorStoreService.SearchWithFilter(
+	// Qdrantから全件取得（フィルタなし）
+	scrollResults, err := ah.vectorStoreService.ScrollAllPoints(
 		context.Background(),
 		collectionName,
-		"異常", // ダミーテキスト
-		uint64(limit),
-		filter,
+		uint32(limit),
 	)
 
 	if err != nil {
@@ -1276,17 +1240,28 @@ func (ah *AIHandler) GetAnomalyResponses(c *gin.Context) {
 		return
 	}
 
-	// 結果をAnomalyResponseに変換
+	// 結果をAnomalyResponseに変換（アプリケーション側でフィルタリング）
 	responses := make([]models.AnomalyResponse, 0)
-	for _, result := range searchResults {
+	for _, result := range scrollResults {
 		if result.Payload == nil {
+			continue
+		}
+
+		// typeフィールドでフィルタ
+		if typeVal := getStringFromPayload(result.Payload, "type"); typeVal != "anomaly_response" {
+			continue
+		}
+
+		// 製品IDでフィルタ（指定がある場合）
+		resultProductID := getStringFromPayload(result.Payload, "product_id")
+		if productID != "" && resultProductID != productID {
 			continue
 		}
 
 		response := models.AnomalyResponse{
 			ResponseID:  getStringFromPayload(result.Payload, "response_id"),
 			AnomalyDate: getStringFromPayload(result.Payload, "anomaly_date"),
-			ProductID:   getStringFromPayload(result.Payload, "product_id"),
+			ProductID:   resultProductID,
 			Impact:      getStringFromPayload(result.Payload, "impact"),
 			Timestamp:   getStringFromPayload(result.Payload, "timestamp"),
 		}
@@ -1325,30 +1300,11 @@ func (ah *AIHandler) GetLearningInsights(c *gin.Context) {
 	// コレクション名を定義
 	collectionName := "anomaly_responses"
 
-	// 回答履歴を取得
-	filter := &qdrant.Filter{
-		Must: []*qdrant.Condition{
-			{
-				ConditionOneOf: &qdrant.Condition_Field{
-					Field: &qdrant.FieldCondition{
-						Key: "type",
-						Match: &qdrant.Match{
-							MatchValue: &qdrant.Match_Keyword{
-								Keyword: "anomaly_response",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	searchResults, err := ah.vectorStoreService.SearchWithFilter(
+	// 回答履歴を全件取得
+	scrollResults, err := ah.vectorStoreService.ScrollAllPoints(
 		context.Background(),
 		collectionName,
-		"パターン分析",
 		100,
-		filter,
 	)
 
 	if err != nil {
@@ -1367,8 +1323,13 @@ func (ah *AIHandler) GetLearningInsights(c *gin.Context) {
 		examples    []string
 	})
 
-	for _, result := range searchResults {
+	for _, result := range scrollResults {
 		if result.Payload == nil {
+			continue
+		}
+
+		// typeフィールドでフィルタ
+		if typeVal := getStringFromPayload(result.Payload, "type"); typeVal != "anomaly_response" {
 			continue
 		}
 
