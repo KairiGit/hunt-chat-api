@@ -1,43 +1,46 @@
+import { proxyRequest } from '@/lib/proxy-helper';
 import { NextRequest, NextResponse } from 'next/server';
 
-const GO_BACKEND_URL = process.env.GO_BACKEND_URL || 'https://hunt-chat-api.vercel.app';
+export const dynamic = 'force-dynamic';
 
+/**
+ * 特定の異常検知への回答を削除するプロキシAPI
+ * @param request NextRequest
+ * @param params URLから取得したパラメータ（idを含む）
+ */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    // Note: このプロジェクトのNext.jsのバージョンでは、App Routerの`params`がPromiseとして渡される
+    // 型定義に従い、awaitで解決する必要がある
+    const { id } = await params;
     
-    const apiUrl = `${GO_BACKEND_URL}/api/v1/ai/anomaly-response/${id}`;
-    
-    console.log(`[Proxy DELETE /anomaly-response/${id}] Forwarding to: ${apiUrl}`);
-    
-    const response = await fetch(apiUrl, {
-      method: 'DELETE',
-      headers: {
-        'X-API-KEY': process.env.API_KEY || '',
-      },
-    });
-
-    // レスポンスがJSONでない場合の処理
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      const text = await response.text();
-      console.error('[Proxy DELETE /anomaly-response/:id] Non-JSON response:', text);
+    if (!id) {
       return NextResponse.json(
-        { success: false, error: `サーバーエラー: ${text}` },
-        { status: response.status }
+        { success: false, error: 'IDが指定されていません' },
+        { status: 400 }
       );
     }
 
-    const data = await response.json();
-    
-    return NextResponse.json(data, { status: response.status });
+    const endpoint = `/api/v1/ai/anomaly-response/${id}`;
+
+    console.log(`[Proxy DELETE] Forwarding to: ${endpoint}`);
+
+    // proxyRequestヘルパーを使ってリクエストを転送
+    return await proxyRequest(endpoint, {
+      method: 'DELETE',
+    });
+
   } catch (error) {
-    console.error('[Proxy DELETE /anomaly-response/:id] Error:', error);
+    // `await params` や予期せぬエラーをキャッチする
+    console.error(`[Proxy DELETE /anomaly-response/:id] Top-level error:`, error);
+    
+    const errorMessage = error instanceof Error ? error.message : '不明なエラーです';
+
     return NextResponse.json(
-      { success: false, error: 'プロキシエラーが発生しました' },
+      { success: false, error: `プロキシ処理中に予期せぬエラーが発生しました: ${errorMessage}` },
       { status: 500 }
     );
   }
