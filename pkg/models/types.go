@@ -192,15 +192,15 @@ type ConfidenceInterval struct {
 
 // AnomalyDetection represents a detected anomaly in the data
 type AnomalyDetection struct {
-	Date          string  `json:"date"`
-	ProductID     string  `json:"product_id,omitempty"` // 追加
-	ActualValue   float64 `json:"actual_value"`
-	ExpectedValue float64 `json:"expected_value"`
-	Deviation     float64 `json:"deviation"`             // Absolute deviation from expected
-	ZScore        float64 `json:"z_score"`               // Standard deviations from mean
-	AnomalyType   string  `json:"anomaly_type"`          // "急増" or "急減"
-	Severity      string  `json:"severity"`              // "low", "medium", "high", "critical"
-	AIQuestion    string  `json:"ai_question,omitempty"` // AI-generated question
+	Date            string   `json:"date"`
+	ProductID       string   `json:"product_id,omitempty"` // 追加
+	ActualValue     float64  `json:"actual_value"`
+	ExpectedValue   float64  `json:"expected_value"`
+	Deviation       float64  `json:"deviation"`             // Absolute deviation from expected
+	ZScore          float64  `json:"z_score"`               // Standard deviations from mean
+	AnomalyType     string   `json:"anomaly_type"`          // "急増" or "急減"
+	Severity        string   `json:"severity"`              // "low", "medium", "high", "critical"
+	AIQuestion      string   `json:"ai_question,omitempty"` // AI-generated question
 	QuestionChoices []string `json:"question_choices,omitempty"`
 }
 

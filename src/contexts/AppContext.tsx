@@ -1,10 +1,15 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
+import type { AnomalyDetection } from '@/types/analysis';
+
+export type MessageType = 'normal' | 'anomaly-question';
 
 export interface ChatMessage {
   sender: 'user' | 'ai';
   text: string;
+  type?: MessageType;
+  anomalyData?: AnomalyDetection;
 }
 
 // Contextで共有する値の型定義

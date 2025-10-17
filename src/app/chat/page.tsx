@@ -22,17 +22,141 @@ export default function ChatPage() {
   const [chatLoading, setChatLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // ★ 未回答の異常と回答モードのstateを追加
+  // ★ 未回答の異常と回答ターゲットのstate
   const [unansweredAnomalies, setUnansweredAnomalies] = useState<AnomalyDetection[]>([]);
-  const [isAnomalyResponseMode, setIsAnomalyResponseMode] = useState(false);
-  const [currentAnomaly, setCurrentAnomaly] = useState<AnomalyDetection | null>(null);
+  const [responseTarget, setResponseTarget] = useState<AnomalyDetection | null>(null);
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
 
   // チャットログが更新されたら一番下にスクロール
   useEffect(() => {
     if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+      // ScrollArea内のビューポート要素を取得してスクロール
+      const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
     }
   }, [chatMessages, chatLoading]);
+
+  // ★ 回答を開始する関数
+  const startAnswering = () => {
+    if (unansweredAnomalies.length === 0) return;
+    
+    const firstAnomaly = unansweredAnomalies[0];
+    setResponseTarget(firstAnomaly);
+    setIsWaitingForResponse(true);
+
+    // AIの質問メッセージをチャットに追加
+    const questionMessage: ChatMessage = {
+      sender: 'ai',
+      text: `${firstAnomaly.date} に ${firstAnomaly.product_id} で異常な売上変動を検出しました。\n\n実績値: ${firstAnomaly.actual_value.toFixed(2)}\n予測値: ${firstAnomaly.expected_value.toFixed(2)}\n偏差: ${firstAnomaly.deviation.toFixed(2)}%\n\n${firstAnomaly.ai_question || 'この原因は何だと思いますか？'}`,
+      type: 'anomaly-question',
+      anomalyData: firstAnomaly,
+    };
+    setChatMessages((prev) => [...prev, questionMessage]);
+  };
+
+  // ★ 選択肢ボタンをクリックした時の処理
+  const handleChoiceClick = async (choice: string) => {
+    if (!responseTarget) return;
+
+    // 「その他」が選択された場合は、入力欄にフォーカス
+    if (choice === 'その他') {
+      setChatInput('');
+      setIsWaitingForResponse(true);
+      
+      // プレースホルダーを変更して自由記述を促す
+      const textarea = document.querySelector('textarea');
+      if (textarea) {
+        textarea.placeholder = '異常の原因を詳しく記述してください...';
+        textarea.focus();
+      }
+      return;
+    }
+
+    // 定型回答として即座に送信
+    await sendAnswer(choice);
+  };
+
+  // ★ 回答を送信する共通関数
+  const sendAnswer = async (answer: string) => {
+    if (!responseTarget) return;
+
+    // ユーザーメッセージをチャットに追加
+    const userMessage: ChatMessage = {
+      sender: 'user',
+      text: answer,
+    };
+    setChatMessages((prev) => [...prev, userMessage]);
+
+    const responsePayload = {
+      anomaly_date: responseTarget.date,
+      product_id: responseTarget.product_id,
+      question: responseTarget.ai_question || '原因は何だと思いますか？',
+      answer: answer,
+      answer_type: answer.length > 20 ? 'free_text' : 'multiple_choice',
+      tags: [answer],
+      impact: 'unknown',
+      impact_value: 0,
+    };
+
+    try {
+      const response = await fetch('/api/proxy/anomaly-response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(responsePayload),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: 'Failed to save anomaly response' }));
+        throw new Error(errData.error);
+      }
+
+      // AIからの感謝メッセージをチャットに追加
+      const thankYouMessage: ChatMessage = {
+        sender: 'ai',
+        text: `ご回答ありがとうございます！「${answer}」という情報を学習しました。今後の分析精度が向上します。`,
+      };
+      setChatMessages((prev) => [...prev, thankYouMessage]);
+
+      // 回答済みの異常をリストから削除
+      const updatedAnomalies = unansweredAnomalies.filter(
+        anomaly => anomaly.date !== responseTarget.date || anomaly.product_id !== responseTarget.product_id
+      );
+      setUnansweredAnomalies(updatedAnomalies);
+
+      // 次の未回答の異常があれば表示、なければモード終了
+      if (updatedAnomalies.length > 0) {
+        const nextAnomaly = updatedAnomalies[0];
+        setResponseTarget(nextAnomaly);
+        
+        const nextQuestionMessage: ChatMessage = {
+          sender: 'ai',
+          text: `続いて、${nextAnomaly.date} の ${nextAnomaly.product_id} について教えてください。\n\n実績値: ${nextAnomaly.actual_value.toFixed(2)}\n予測値: ${nextAnomaly.expected_value.toFixed(2)}\n\n${nextAnomaly.ai_question || 'この原因は何だと思いますか？'}`,
+          type: 'anomaly-question',
+          anomalyData: nextAnomaly,
+        };
+        setChatMessages((prev) => [...prev, nextQuestionMessage]);
+      } else {
+        setResponseTarget(null);
+        setIsWaitingForResponse(false);
+        
+        const completionMessage: ChatMessage = {
+          sender: 'ai',
+          text: 'すべての異常について回答いただきました。ありがとうございました！学習したデータは今後の分析に活用されます。',
+        };
+        setChatMessages((prev) => [...prev, completionMessage]);
+      }
+
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred';
+      const errorResponseMessage: ChatMessage = {
+        sender: 'ai',
+        text: `エラー: 回答の保存中に問題が発生しました。(${errorMessage})`,
+      };
+      setChatMessages((prev) => [...prev, errorResponseMessage]);
+    }
+  };
 
   // ★ コンポーネントのマウント時に未回答の異常を取得
   useEffect(() => {
@@ -59,9 +183,19 @@ export default function ChatPage() {
     fetchUnansweredAnomalies();
   }, [analysisSummary]); // ★ analysisSummaryを依存配列に追加
 
+  // ★ 通常のチャット送信処理
   const handleChatSubmit = async () => {
     if (!chatInput.trim() || chatLoading) return;
 
+    // 回答待ち状態の場合は、回答として処理
+    if (isWaitingForResponse && responseTarget) {
+      await sendAnswer(chatInput);
+      setChatInput('');
+      setIsWaitingForResponse(false);
+      return;
+    }
+
+    // 通常のチャット処理
     const userMessage: ChatMessage = { sender: 'user', text: chatInput };
     const aiEmptyMessage: ChatMessage = { sender: 'ai', text: '' };
     setChatMessages((prev) => [...prev, userMessage, aiEmptyMessage]);
@@ -93,7 +227,7 @@ export default function ChatPage() {
           if (last && last.sender === 'ai') {
             return [...prev.slice(0, -1), { ...last, text: last.text + chunk }];
           }
-          return prev; // 予期しないケースでは状態を更新しない
+          return prev;
         });
       }
     } catch (e) {
@@ -110,68 +244,14 @@ export default function ChatPage() {
     }
   };
 
+  // IME（日本語入力）の状態を追跡
+  const [isComposing, setIsComposing] = useState(false);
+
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // IME変換中はEnterキーを無視
+    if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
       e.preventDefault();
       handleChatSubmit();
-    }
-  };
-
-  // ★ 異常への回答を処理する関数
-  const handleAnomalyResponse = async (choice: string) => {
-    if (!currentAnomaly) return;
-
-    const responsePayload = {
-      anomaly_date: currentAnomaly.date,
-      product_id: currentAnomaly.product_id,
-      question: currentAnomaly.ai_question,
-      answer: choice,
-      answer_type: 'multiple_choice',
-      tags: [choice], // 回答をタグとして保存
-      impact: 'unknown', // 現時点では影響不明
-      impact_value: 0,
-    };
-
-    try {
-      const response = await fetch('/api/proxy/anomaly-response', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(responsePayload),
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({ error: 'Failed to save anomaly response' }));
-        throw new Error(errData.error);
-      }
-
-      const result = await response.json();
-
-      // AIからの感謝メッセージをチャットに追加
-      const thankYouMessage: ChatMessage = {
-        sender: 'ai',
-        text: `ご回答ありがとうございます！「${choice}」という情報を学習しました。今後の分析精度が向上します。`,
-      };
-      setChatMessages((prev) => [...prev, thankYouMessage]);
-
-      // 回答済みの異常をリストから削除
-      const updatedAnomalies = unansweredAnomalies.filter(anomaly => anomaly.date !== currentAnomaly.date || anomaly.product_id !== currentAnomaly.product_id);
-      setUnansweredAnomalies(updatedAnomalies);
-
-      // 次の未回答の異常があれば表示、なければモード終了
-      if (updatedAnomalies.length > 0) {
-        setCurrentAnomaly(updatedAnomalies[0]);
-      } else {
-        setIsAnomalyResponseMode(false);
-        setCurrentAnomaly(null);
-      }
-
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred';
-      const errorResponseMessage: ChatMessage = {
-        sender: 'ai',
-        text: `エラー: 回答の保存中に問題が発生しました。(${errorMessage})`,
-      };
-      setChatMessages((prev) => [...prev, errorResponseMessage]);
     }
   };
 
@@ -180,7 +260,7 @@ export default function ChatPage() {
       <h1 className="text-2xl font-bold mb-4">AIチャット</h1>
 
       {/* 未回答の異常通知エリア */}
-      {unansweredAnomalies.length > 0 && !isAnomalyResponseMode && (
+      {unansweredAnomalies.length > 0 && !responseTarget && (
         <Card className="mb-4 border-yellow-500 bg-yellow-50">
           <CardHeader>
             <CardTitle className="text-yellow-800">未回答の異常があります</CardTitle>
@@ -189,52 +269,27 @@ export default function ChatPage() {
             </CardDescription>
           </CardHeader>
           <CardFooter>
-            <Button onClick={() => {
-              console.log("Entering anomaly response mode with:", unansweredAnomalies[0]);
-              setCurrentAnomaly(unansweredAnomalies[0]);
-              setIsAnomalyResponseMode(true);
-            }} className="bg-yellow-600 hover:bg-yellow-700">
+            <Button onClick={startAnswering} className="bg-yellow-600 hover:bg-yellow-700">
               回答を開始する
             </Button>
           </CardFooter>
         </Card>
       )}
 
-      {/* 異常回答モードのUI */}
-      {isAnomalyResponseMode && currentAnomaly ? (
-        <Card className="mb-4 border-blue-500">
-          <CardHeader>
-            <CardTitle>異常の原因分析</CardTitle>
-            <CardDescription>
-              {currentAnomaly.date} の {currentAnomaly.product_id} の売上 (実績: {currentAnomaly.actual_value.toFixed(2)}, 予測: {currentAnomaly.expected_value.toFixed(2)}) の異常について、最も可能性の高い原因を選択してください。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="font-semibold mb-4">{currentAnomaly.ai_question}</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {currentAnomaly.question_choices?.map((choice, index) => (
-                <Button key={index} variant="outline" onClick={() => handleAnomalyResponse(choice)}>
-                  {choice}
-                </Button>
-              ))}
-               <Button variant="destructive" onClick={() => setIsAnomalyResponseMode(false)}>
-                キャンセル
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="flex-1 flex flex-col">
-          <CardHeader>
-            <CardTitle>会話</CardTitle>
-            <CardDescription>
-              {analysisSummary 
+      {/* メインのチャットエリア */}
+      <Card className="flex-1 flex flex-col min-h-0">
+        <CardHeader className="flex-shrink-0">
+          <CardTitle>会話</CardTitle>
+          <CardDescription>
+            {responseTarget 
+              ? '異常の原因について回答してください' 
+              : analysisSummary 
                 ? 'ファイル分析の結果を元に対話できます。' 
                 : '先に「ファイル分析」ページでデータを分析してください。'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-hidden">
-            <ScrollArea className="h-full" ref={scrollAreaRef}>
+          </CardDescription>
+        </CardHeader>
+          <CardContent className="flex-1 overflow-hidden min-h-0">
+            <ScrollArea className="h-full w-full" ref={scrollAreaRef}>
               <div className="space-y-6 pr-4">
                 {chatMessages.map((msg, index) => (
                   <div key={index} className={`flex items-start gap-4 ${msg.sender === 'user' ? 'justify-end' : ''}`}>
@@ -264,26 +319,54 @@ export default function ChatPage() {
                   </div>
                 )}
               </div>
-            </ScrollArea>
-          </CardContent>
-          <CardFooter className="pt-4 border-t">
-            <form onSubmit={(e) => { e.preventDefault(); handleChatSubmit(); }} className="flex w-full items-center space-x-2">
-              <Textarea
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={handleKeyPress}
-                placeholder={analysisSummary ? '分析結果について質問... (例: このデータの傾向を教えて)' : '先にファイルを分析してください'}
-                disabled={!analysisSummary}
-                className="flex-1 resize-none"
-                rows={1}
-              />
-              <Button type="submit" disabled={chatLoading || !analysisSummary || !chatInput.trim()}>
-                送信
-              </Button>
-            </form>
-          </CardFooter>
-        </Card>
-      )}
+          </ScrollArea>
+        </CardContent>
+        <CardFooter className="pt-4 border-t flex-col gap-3 flex-shrink-0">
+          {/* ★ 選択肢ボタンエリア（回答モード時のみ表示） */}
+          {responseTarget && responseTarget.question_choices && (
+            <div className="w-full flex flex-wrap gap-2 mb-2">
+              {responseTarget.question_choices.map((choice, index) => (
+                <Button 
+                  key={index} 
+                  variant={choice === 'その他' ? 'outline' : 'secondary'}
+                  onClick={() => handleChoiceClick(choice)}
+                  className="flex-1 min-w-[120px]"
+                >
+                  {choice === 'キャンペーン・販促活動' && '🎯 '}
+                  {choice === '天候・気温の影響' && '☀️ '}
+                  {choice === 'イベント・行事' && '🎉 '}
+                  {choice === 'その他' && '✏️ '}
+                  {choice}
+                </Button>
+              ))}
+            </div>
+          )}
+          
+          {/* 入力欄 */}
+          <form onSubmit={(e) => { e.preventDefault(); handleChatSubmit(); }} className="flex w-full items-center space-x-2">
+            <Textarea
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={handleKeyPress}
+              onCompositionStart={() => setIsComposing(true)}
+              onCompositionEnd={() => setIsComposing(false)}
+              placeholder={
+                responseTarget 
+                  ? '「その他」を選択した場合は、詳しい原因を記述してください...' 
+                  : analysisSummary 
+                    ? '分析結果について質問... (例: このデータの傾向を教えて)' 
+                    : '先にファイルを分析してください'
+              }
+              disabled={!analysisSummary && !responseTarget}
+              className="flex-1 resize-none"
+              rows={1}
+            />
+            <Button type="submit" disabled={chatLoading || (!analysisSummary && !responseTarget) || !chatInput.trim()}>
+              送信
+            </Button>
+          </form>
+        </CardFooter>
+      </Card>
     </div>
   );
 }

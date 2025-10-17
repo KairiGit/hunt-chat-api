@@ -150,7 +150,7 @@ func main() {
 			ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)        // 分析レポート削除API
 			ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)  // 回答削除API
 			ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses) // 全回答削除API
-			ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)      // 未回答の異常を取得
+			ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)    // 未回答の異常を取得
 		}
 	} // サーバー起動
 	log.Println("Starting HUNT Chat-API server on :8080")

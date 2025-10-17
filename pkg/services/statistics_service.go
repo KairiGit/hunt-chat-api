@@ -584,7 +584,7 @@ func (s *StatisticsService) PredictFutureSales(
 
 // DetectAnomalies 売上データから異常値を検出する（移動平均乖離率法）
 func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, productID string) []models.AnomalyDetection {
-	windowSize := 30 // 30日間の移動平均
+	windowSize := 30           // 30日間の移動平均
 	percentageThreshold := 0.5 // 50%の乖離
 
 	if len(sales) < windowSize {
@@ -597,16 +597,16 @@ func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, pro
 	for i := windowSize; i < len(sales); i++ {
 		// ウィンドウ内のデータを取得
 		window := sales[i-windowSize : i]
-		
+
 		// 移動平均を計算
 		mean := s.calculateMean(window)
-		
+
 		// 現在の値
 		currentValue := sales[i]
-		
+
 		// 移動平均からの乖離を計算
 		deviation := currentValue - mean
-		
+
 		// 閾値を計算
 		threshold := mean * percentageThreshold
 
