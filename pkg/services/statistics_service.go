@@ -14,13 +14,15 @@ import (
 
 // StatisticsService 統計分析サービス
 type StatisticsService struct {
-	weatherService *WeatherService
+	weatherService     *WeatherService
+	azureOpenAIService *AzureOpenAIService
 }
 
 // NewStatisticsService 新しい統計分析サービスを作成
-func NewStatisticsService(weatherService *WeatherService) *StatisticsService {
+func NewStatisticsService(weatherService *WeatherService, azureOpenAIService *AzureOpenAIService) *StatisticsService {
 	return &StatisticsService{
-		weatherService: weatherService,
+		weatherService:     weatherService,
+		azureOpenAIService: azureOpenAIService,
 	}
 }
 
@@ -580,39 +582,61 @@ func (s *StatisticsService) PredictFutureSales(
 	}, nil
 }
 
-// DetectAnomalies 売上データから異常値を検出する（3σ法）
-func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string) []models.AnomalyDetection {
-	if len(sales) != len(dates) || len(sales) < 10 {
-		return nil
+// DetectAnomalies 売上データから異常値を検出する（移動平均乖離率法）
+func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, productID string) []models.AnomalyDetection {
+	windowSize := 30 // 30日間の移動平均
+	percentageThreshold := 0.5 // 50%の乖離
+
+	if len(sales) < windowSize {
+		log.Printf("[異常検知@%s] データが少なく、移動平均を計算できません（%d件 < %d件）", productID, len(sales), windowSize)
+		return []models.AnomalyDetection{}
 	}
 
-	mean := s.calculateMean(sales)
-	stdDev := s.calculateStandardDeviation(sales)
-
 	var anomalies []models.AnomalyDetection
-	threshold := 3.0 * stdDev // 3σ
 
-	for i, value := range sales {
-		deviation := math.Abs(value - mean)
-		if deviation > threshold {
+	for i := windowSize; i < len(sales); i++ {
+		// ウィンドウ内のデータを取得
+		window := sales[i-windowSize : i]
+		
+		// 移動平均を計算
+		mean := s.calculateMean(window)
+		
+		// 現在の値
+		currentValue := sales[i]
+		
+		// 移動平均からの乖離を計算
+		deviation := currentValue - mean
+		
+		// 閾値を計算
+		threshold := mean * percentageThreshold
+
+		if mean > 0 && math.Abs(deviation) > threshold {
 			anomalyType := "急増"
-			if value < mean {
+			if deviation < 0 {
 				anomalyType = "急減"
 			}
 
-			zScore := (value - mean) / stdDev
+			// Zスコアは参考値として（ウィンドウ内の統計で計算）
+			stdDev := s.calculateStandardDeviation(window)
+			var zScore float64
+			if stdDev > 0 {
+				zScore = deviation / stdDev
+			}
 
 			anomalies = append(anomalies, models.AnomalyDetection{
 				Date:          dates[i],
-				ActualValue:   value,
-				ExpectedValue: mean,
-				Deviation:     deviation,
+				ProductID:     productID,
+				ActualValue:   currentValue,
+				ExpectedValue: mean, // 期待値として移動平均を使用
+				Deviation:     math.Abs(deviation),
 				ZScore:        zScore,
 				AnomalyType:   anomalyType,
 				Severity:      s.calculateSeverity(math.Abs(zScore)),
 			})
 		}
 	}
+
+	log.Printf("[異常検知@%s] 移動平均法により %d 件の異常を検出しました", productID, len(anomalies))
 
 	return anomalies
 }
@@ -630,26 +654,54 @@ func (s *StatisticsService) calculateSeverity(absZScore float64) string {
 }
 
 // GenerateAIQuestion 異常値に基づいてAIが質問を生成
-func (s *StatisticsService) GenerateAIQuestion(anomaly models.AnomalyDetection) string {
+func (s *StatisticsService) GenerateAIQuestion(anomaly models.AnomalyDetection) (string, []string) {
+	// AIサービスが利用可能な場合は、AIに質問と選択肢を生成させる
+	if s.azureOpenAIService != nil {
+		// AnomalyDetectionをAnomalyに変換（必要なフィールドのみ）
+		anomalyForAI := models.Anomaly{
+			Date:        anomaly.Date,
+			ProductID:   anomaly.ProductID, // AnomalyDetectionにProductIDを追加したため利用可能
+			Description: fmt.Sprintf("売上%s (実績: %.0f, 期待値: %.0f)", anomaly.AnomalyType, anomaly.ActualValue, anomaly.ExpectedValue),
+		}
+
+		result, err := s.azureOpenAIService.GenerateQuestionAndChoicesFromAnomaly(anomalyForAI)
+		if err == nil && result != nil && result.Question != "" {
+			return result.Question, result.Choices
+		}
+		log.Printf("⚠️ AIからの質問生成に失敗しました。フォールバックします。エラー: %v", err)
+	}
+
+	// フォールバック：テンプレートベースの質問と固定の選択肢
+	var question string
 	if anomaly.AnomalyType == "急増" {
-		return fmt.Sprintf(
-			"📈 %s に売上が通常より %.0f 増加しました（期待値: %.0f → 実績: %.0f）。\n"+
-				"この日に特別なイベント、キャンペーン、または外的要因はありましたか？",
+		question = fmt.Sprintf(
+			"📈 %s に製品 %s の売上が通常より %.0f 増加しました（期待値: %.0f → 実績: %.0f）。この日に特別なイベント、キャンペーン、または外的要因はありましたか？",
 			anomaly.Date,
+			anomaly.ProductID,
 			anomaly.Deviation,
 			anomaly.ExpectedValue,
 			anomaly.ActualValue,
 		)
 	} else {
-		return fmt.Sprintf(
-			"📉 %s に売上が通常より %.0f 減少しました（期待値: %.0f → 実績: %.0f）。\n"+
-				"この日に売上減少の原因となった要因（天候、競合、在庫切れなど）はありましたか？",
+		question = fmt.Sprintf(
+			"📉 %s に製品 %s の売上が通常より %.0f 減少しました（期待値: %.0f → 実績: %.0f）。この日に売上減少の原因となった要因（天候、競合、在庫切れなど）はありましたか？",
 			anomaly.Date,
+			anomaly.ProductID,
 			anomaly.Deviation,
 			anomaly.ExpectedValue,
 			anomaly.ActualValue,
 		)
 	}
+
+	defaultChoices := []string{
+		"キャンペーン・販促活動",
+		"天候の影響",
+		"競合他社の動き",
+		"特に思い当たる節はない",
+		"その他（自由記述）",
+	}
+
+	return question, defaultChoices
 }
 
 // ForecastProductDemand 製品別の需要予測を実行

@@ -80,7 +80,7 @@ export function AnalysisReportView({ report }: AnalysisReportViewProps) {
                       <div className="text-sm">
                         <span className="font-semibold">{anomaly.anomaly_type}</span>
                         <span className="text-gray-600 ml-2">
-                          実績: {anomaly.actual_value.toFixed(0)} (期待値: {anomaly.expected_value.toFixed(0)})
+                          実績: {anomaly.actual_value?.toFixed(0)} (期待値: {anomaly.expected_value?.toFixed(0)})
                         </span>
                       </div>
                     </div>

@@ -2,6 +2,7 @@
 
 export interface AnomalyDetection {
   date: string;
+  product_id: string;
   actual_value: number;
   expected_value: number;
   deviation: number;
@@ -9,6 +10,7 @@ export interface AnomalyDetection {
   anomaly_type: string;
   severity: string;
   ai_question?: string;
+  question_choices?: string[];
 }
 
 export interface CorrelationResult {

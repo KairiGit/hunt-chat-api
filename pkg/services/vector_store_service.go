@@ -289,20 +289,13 @@ func (s *VectorStoreService) GetAllAnalysisReportHeaders(ctx context.Context) ([
 
 	var headers []models.AnalysisReportHeader
 	for _, point := range points {
-		if point.Payload["type"].GetStringValue() == "analysis_report" {
-			// textペイロードから完全なレポートJSONを取得
-			reportJSON := point.Payload["text"].GetStringValue()
-			var report models.AnalysisReport
-			if err := json.Unmarshal([]byte(reportJSON), &report); err == nil {
-				headers = append(headers, models.AnalysisReportHeader{
-					ReportID:     report.ReportID,
-					FileName:     report.FileName,
-					AnalysisDate: report.AnalysisDate,
-					DateRange:    report.DateRange,
-				})
-			} else {
-				log.Printf("レポートJSONのパースに失敗: %v", err)
-			}
+		if point.Payload != nil && point.Payload["type"] != nil && point.Payload["type"].GetStringValue() == "analysis_report" {
+			headers = append(headers, models.AnalysisReportHeader{
+				ReportID:     point.Id.GetUuid(),
+				FileName:     getStringFromPayload(point.Payload, "file_name"),
+				AnalysisDate: getStringFromPayload(point.Payload, "analysis_date"),
+				// DateRangeはペイロードにないので、必要であれば別途追加する
+			})
 		}
 	}
 
@@ -315,6 +308,76 @@ func (s *VectorStoreService) GetAllAnalysisReportHeaders(ctx context.Context) ([
 
 	log.Printf("%d件の分析レポートヘッダーを取得しました", len(headers))
 	return headers, nil
+}
+
+// GetAllAnalysisReports はすべての分析レポートを完全に取得します
+func (s *VectorStoreService) GetAllAnalysisReports(ctx context.Context) ([]models.AnalysisReport, error) {
+	collectionName := "hunt_chat_documents"
+	points, err := s.ScrollAllPoints(ctx, collectionName, 1000) // 最大1000件まで取得
+	if err != nil {
+		return nil, fmt.Errorf("全レポートの取得に失敗: %w", err)
+	}
+
+	var reports []models.AnalysisReport
+	for _, point := range points {
+		if point.Payload != nil && point.Payload["type"] != nil && point.Payload["type"].GetStringValue() == "analysis_report" {
+			// ★ textからではなく、full_report_jsonから取得する
+			reportJSON := getStringFromPayload(point.Payload, "full_report_json")
+			if reportJSON == "" {
+				log.Printf("レポートID %s に full_report_json が見つかりません。スキップします。", point.Id.GetUuid())
+				continue
+			}
+			var report models.AnalysisReport
+			if err := json.Unmarshal([]byte(reportJSON), &report); err == nil {
+				reports = append(reports, report)
+			} else {
+				log.Printf("レポートJSONのパースに失敗 (GetAllAnalysisReports): %v", err)
+			}
+		}
+	}
+
+	log.Printf("%d件の完全な分析レポートを取得しました", len(reports))
+	return reports, nil
+}
+
+// GetAllAnomalyResponses はすべての異常回答を取得します
+func (s *VectorStoreService) GetAllAnomalyResponses(ctx context.Context) ([]models.AnomalyResponse, error) {
+	collectionName := "anomaly_responses"
+	points, err := s.ScrollAllPoints(ctx, collectionName, 10000) // 十分な数を取得
+	if err != nil {
+		return nil, fmt.Errorf("全異常回答の取得に失敗: %w", err)
+	}
+
+	var responses []models.AnomalyResponse
+	for _, point := range points {
+		if point.Payload == nil {
+			continue
+		}
+
+		// textペイロードから回答のJSON文字列を取得しパースする
+		// SaveAnomalyResponseの実装に合わせて修正
+		responseText := getStringFromPayload(point.Payload, "text")
+		var response models.AnomalyResponse
+
+		// ペイロードから直接フィールドを読み込む方が確実
+		response.ResponseID = getStringFromPayload(point.Payload, "response_id")
+		response.AnomalyDate = getStringFromPayload(point.Payload, "anomaly_date")
+		response.ProductID = getStringFromPayload(point.Payload, "product_id")
+		response.Question = getStringFromPayload(point.Payload, "question")
+		response.Answer = getStringFromPayload(point.Payload, "answer")
+
+		if response.AnomalyDate != "" && response.ProductID != "" {
+			responses = append(responses, response)
+		} else if responseText != "" {
+			// textからのパースも試みる（後方互換性のため）
+			// この部分はSaveAnomalyResponseの実装に依存します
+			// 現在の実装ではtextにJSONは入っていないため、ペイロードからの読み込みがメイン
+			continue
+		}
+	}
+
+	log.Printf("%d件の異常回答を取得しました", len(responses))
+	return responses, nil
 }
 
 // GetAnalysisReportByID はIDで単一の分析レポートを取得します
@@ -350,11 +413,16 @@ func (s *VectorStoreService) GetAnalysisReportByID(ctx context.Context, reportID
 	}
 
 	point := scrollResult.GetResult()[0]
-	if point.Payload["type"].GetStringValue() != "analysis_report" {
+	if point.Payload == nil || point.Payload["type"] == nil || point.Payload["type"].GetStringValue() != "analysis_report" {
 		return nil, fmt.Errorf("ポイント '%s' は分析レポートではありません", reportID)
 	}
 
-	reportJSON := point.Payload["text"].GetStringValue()
+	// ★ textからではなく、full_report_jsonから取得する
+	reportJSON := getStringFromPayload(point.Payload, "full_report_json")
+	if reportJSON == "" {
+		return nil, fmt.Errorf("レポートID '%s' に full_report_json が見つかりません", reportID)
+	}
+
 	var report models.AnalysisReport
 	if err := json.Unmarshal([]byte(reportJSON), &report); err != nil {
 		return nil, fmt.Errorf("レポートJSONのパースに失敗: %w", err)
@@ -821,4 +889,49 @@ func getStringFromPayload(payload map[string]*qdrant.Value, key string) string {
 		}
 	}
 	return ""
+}
+
+// HasAnomalyResponse は指定された異常に対する回答が既に存在するかを確認します
+func (s *VectorStoreService) HasAnomalyResponse(ctx context.Context, anomalyDate string, productID string) (bool, error) {
+	collectionName := "anomaly_responses"
+
+	// anomaly_date と product_id でフィルタリング
+	filter := &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			{
+				ConditionOneOf: &qdrant.Condition_Field{
+					Field: &qdrant.FieldCondition{
+						Key: "anomaly_date",
+						Match: &qdrant.Match{
+							MatchValue: &qdrant.Match_Keyword{
+								Keyword: anomalyDate,
+							},
+						},
+					},
+				},
+			},
+			{
+				ConditionOneOf: &qdrant.Condition_Field{
+					Field: &qdrant.FieldCondition{
+						Key: "product_id",
+						Match: &qdrant.Match{
+							MatchValue: &qdrant.Match_Keyword{
+								Keyword: productID,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// 検索を実行（テキストはダミーでOK、フィルタが主目的）
+	// topK=1で十分
+	searchResults, err := s.SearchWithFilter(ctx, collectionName, "anomaly check", 1, filter)
+	if err != nil {
+		return false, fmt.Errorf("異常回答の存在確認中に検索エラー: %w", err)
+	}
+
+	// 結果が1件以上あれば、回答は存在すると判断
+	return len(searchResults) > 0, nil
 }

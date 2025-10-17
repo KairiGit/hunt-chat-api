@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"hunt-chat-api/pkg/models"
@@ -39,7 +40,7 @@ func NewAIHandler(azureOpenAIService *services.AzureOpenAIService, weatherServic
 		weatherService:        weatherService,
 		demandForecastService: demandForecastService,
 		vectorStoreService:    vectorStoreService,
-		statisticsService:     services.NewStatisticsService(weatherService),
+		statisticsService:     services.NewStatisticsService(weatherService, azureOpenAIService),
 	}
 }
 
@@ -109,7 +110,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 
 	// 列インデックスを検出
 	dateColIdx := findIndex(header, "date", "日付")
-	productColIdx := findIndex(header, "product", "product_id", "商品", "商品ID", "製品", "製品名", "製品ID")
+	productColIdx := findIndex(header, "product_code", "製品コード", "product_id", "商品ID", "product", "製品", "商品", "製品名")
 	salesColIdx := findIndex(header, "sales", "quantity", "販売数", "数量")
 
 	// 🔍 デバッグ: 列インデックスをログ出力
@@ -387,21 +388,56 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			analysisReport = report
 
 			// === 異常検知の実行 ===
-			var salesFloats []float64
-			var datesStrings []string
+			// salesDataを製品IDでグループ化
+			productSalesData := make(map[string][]models.WeatherSalesData)
 			for _, sd := range salesData {
-				salesFloats = append(salesFloats, sd.Sales)
-				datesStrings = append(datesStrings, sd.Date)
+				productSalesData[sd.ProductID] = append(productSalesData[sd.ProductID], sd)
 			}
 
-			if len(salesFloats) > 0 {
-				detectedAnomalies := ah.statisticsService.DetectAnomalies(salesFloats, datesStrings)
-				// 各異常に対してAIが質問を生成
-				for i := range detectedAnomalies {
-					detectedAnomalies[i].AIQuestion = ah.statisticsService.GenerateAIQuestion(detectedAnomalies[i])
+			var allDetectedAnomalies []models.AnomalyDetection
+			log.Printf("[デバッグ] 製品別データグループ数: %d", len(productSalesData))
+
+			// 各製品ごとに異常検知を実行
+			for productID, pSalesData := range productSalesData {
+				if productID == "" {
+					log.Printf("[警告] ProductIDが空のデータグループが見つかりました。このグループの異常検知はスキップします。")
+					continue
 				}
-				analysisReport.Anomalies = detectedAnomalies
-				log.Printf("📈 %d件の異常を検知し、レポートに追加しました", len(detectedAnomalies))
+				log.Printf("[デバッグ] 製品ID '%s' の異常検知を実行中 (%d件のデータ)", productID, len(pSalesData))
+				var salesFloats []float64
+				var datesStrings []string
+				for _, sd := range pSalesData {
+					salesFloats = append(salesFloats, sd.Sales)
+					datesStrings = append(datesStrings, sd.Date)
+				}
+
+				if len(salesFloats) > 0 {
+					detectedAnomalies := ah.statisticsService.DetectAnomalies(salesFloats, datesStrings, productID)
+					// 各異常に対してAIが質問を生成 (並列処理)
+					var wg sync.WaitGroup
+					for i := range detectedAnomalies {
+						wg.Add(1)
+						go func(index int) {
+							defer wg.Done()
+							question, choices := ah.statisticsService.GenerateAIQuestion(detectedAnomalies[index])
+							detectedAnomalies[index].AIQuestion = question
+							detectedAnomalies[index].QuestionChoices = choices
+						}(i)
+					}
+					wg.Wait() // すべてのgoroutineが完了するのを待つ
+
+					allDetectedAnomalies = append(allDetectedAnomalies, detectedAnomalies...)
+				}
+			}
+
+			analysisReport.Anomalies = allDetectedAnomalies
+			log.Printf("📈 %d件の異常を検知し、レポートに追加しました", len(allDetectedAnomalies))
+
+			// デバッグ用にallDetectedAnomaliesの内容をログ出力
+			for i, anomaly := range allDetectedAnomalies {
+				if i < 5 { // 最初の5件のみ
+					log.Printf("  - 検知された異常[%d]: Date=%s, ProductID=%s, Value=%.2f", i, anomaly.Date, anomaly.ProductID, anomaly.ActualValue)
+				}
 			}
 
 			// レポート内容をログ出力（デバッグ用）
@@ -419,30 +455,46 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			log.Printf("  - 推奨事項: %d件", len(report.Recommendations))
 
 			// === 目標② 分析結果をQdrantに保存 ===
-			go func() {
-				ctx := context.Background()
-				reportJSON, _ := json.Marshal(report)
+			ctx := context.Background()
 
+			// 完全なレポートをJSONに変換
+			reportJSON, err := json.Marshal(analysisReport)
+			if err != nil {
+				log.Printf("分析レポートのJSONマーシャリングに失敗: %v", err)
+			} else {
+				// ベクトル化用のサマリーテキストを作成 (トークン数を削減)
+				vectorText := fmt.Sprintf("ファイル名: %s\n分析日: %s\nサマリー: %s\nAIによる洞察: %s\n検出された異常件数: %d",
+					analysisReport.FileName,
+					analysisReport.AnalysisDate,
+					analysisReport.Summary,
+					analysisReport.AIInsights,
+					len(analysisReport.Anomalies),
+				)
+
+				// メタデータに完全なJSONを格納
 				metadata := map[string]interface{}{
-					"type":          "analysis_report",
-					"file_name":     report.FileName,
-					"analysis_date": report.AnalysisDate,
+					"type":             "analysis_report",
+					"file_name":        analysisReport.FileName,
+					"analysis_date":    analysisReport.AnalysisDate,
+					"full_report_json": string(reportJSON), // ★ 完全なJSONをペイロードに格納
 				}
 
+				// StoreDocumentの第4引数(text)には、短いサマリーテキストを渡す
 				err := ah.vectorStoreService.StoreDocument(
 					ctx,
 					"hunt_chat_documents",
-					report.ReportID,
-					string(reportJSON),
+					analysisReport.ReportID,
+					vectorText, // ★ ベクトル化対象は短いサマリーテキスト
 					metadata,
 				)
 
 				if err != nil {
 					log.Printf("分析レポートのQdrant保存に失敗: %v", err)
 				} else {
-					log.Printf("分析レポート %s をQdrantに保存しました", report.ReportID)
+					log.Printf("分析レポート %s をQdrantに同期的に保存しました (ベクトルテキスト: %d文字, 完全JSON: %d文字)",
+						analysisReport.ReportID, len(vectorText), len(reportJSON))
 				}
-			}()
+			}
 		}
 	}
 
@@ -900,12 +952,12 @@ func (ah *AIHandler) GenerateAnomalyQuestion(c *gin.Context) {
 		return
 	}
 	targetAnomaly := anomalies[0]
-	question, err := ah.azureOpenAIService.GenerateQuestionFromAnomaly(targetAnomaly)
+	result, err := ah.azureOpenAIService.GenerateQuestionAndChoicesFromAnomaly(targetAnomaly)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AIからの質問生成に失敗しました: " + err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "異常を検知し、質問を生成しました。", "question": question, "source_anomaly": targetAnomaly})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "異常を検知し、質問を生成しました。", "question": result.Question, "choices": result.Choices, "source_anomaly": targetAnomaly})
 }
 
 // PredictSales 将来の売上を予測する
@@ -955,8 +1007,9 @@ func (ah *AIHandler) PredictSales(c *gin.Context) {
 func (ah *AIHandler) DetectAnomaliesInSales(c *gin.Context) {
 	// サンプルデータ（実際の実装ではリクエストボディから取得）
 	type AnomalyRequest struct {
-		Sales []float64 `json:"sales" binding:"required"`
-		Dates []string  `json:"dates" binding:"required"`
+		Sales     []float64 `json:"sales" binding:"required"`
+		Dates     []string  `json:"dates" binding:"required"`
+		ProductID string    `json:"product_id,omitempty"` // 追加
 	}
 
 	var req AnomalyRequest
@@ -977,11 +1030,13 @@ func (ah *AIHandler) DetectAnomaliesInSales(c *gin.Context) {
 	}
 
 	// 異常検知を実行
-	anomalies := ah.statisticsService.DetectAnomalies(req.Sales, req.Dates)
+	anomalies := ah.statisticsService.DetectAnomalies(req.Sales, req.Dates, req.ProductID)
 
 	// 各異常に対してAIが質問を生成
 	for i := range anomalies {
-		anomalies[i].AIQuestion = ah.statisticsService.GenerateAIQuestion(anomalies[i])
+		question, choices := ah.statisticsService.GenerateAIQuestion(anomalies[i])
+		anomalies[i].AIQuestion = question
+		anomalies[i].QuestionChoices = choices
 	}
 
 	c.JSON(http.StatusOK, models.AnomalyDetectionResponse{
@@ -1221,6 +1276,8 @@ func (ah *AIHandler) SaveAnomalyResponse(c *gin.Context) {
 			"response_id":  response.ResponseID,
 			"anomaly_date": response.AnomalyDate,
 			"product_id":   response.ProductID,
+			"question":     response.Question,
+			"answer":       response.Answer,
 			"tags":         strings.Join(response.Tags, ","),
 			"impact":       response.Impact,
 			"impact_value": response.ImpactValue,
@@ -1700,5 +1757,64 @@ func (ah *AIHandler) DeleteAllAnalysisReports(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "すべての分析レポートが正常に削除されました",
+	})
+}
+
+// GetUnansweredAnomalies は、ユーザーがまだ回答していない異常のリストを取得します
+func (ah *AIHandler) GetUnansweredAnomalies(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "データベースサービスが利用できません。"})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// 1. 全ての分析レポートを取得
+	reports, err := ah.vectorStoreService.GetAllAnalysisReports(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "分析レポートの取得に失敗しました: " + err.Error()})
+		return
+	}
+
+	// 2. 全ての回答済み異常を取得
+	responses, err := ah.vectorStoreService.GetAllAnomalyResponses(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "回答済み異常の取得に失敗しました: " + err.Error()})
+		return
+	}
+
+	// 3. 回答済みの異常をマップに格納 (キー: "日付-製品ID")
+	answeredAnomalies := make(map[string]struct{})
+	for _, res := range responses {
+		key := fmt.Sprintf("%s-%s", res.AnomalyDate, res.ProductID)
+		answeredAnomalies[key] = struct{}{}
+	}
+
+	// 4. 未回答の異常をフィルタリング
+	unansweredAnomalies := make([]models.AnomalyDetection, 0)
+	for _, report := range reports {
+		for _, anomaly := range report.Anomalies {
+			key := fmt.Sprintf("%s-%s", anomaly.Date, anomaly.ProductID)
+			if _, found := answeredAnomalies[key]; !found {
+				// ProductIDが空の異常は除外する
+				if anomaly.ProductID != "" {
+					unansweredAnomalies = append(unansweredAnomalies, anomaly)
+				}
+			}
+		}
+	}
+
+	log.Printf("未回答の異常を %d 件見つけました", len(unansweredAnomalies))
+
+	// デバッグ用に詳細ログを追加
+	for i, anomaly := range unansweredAnomalies {
+		if i < 5 { // 最初の5件だけログに出力
+			log.Printf("  - 未回答[%d]: Date=%s, ProductID=%s, Value=%.2f", i, anomaly.Date, anomaly.ProductID, anomaly.ActualValue)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":   true,
+		"anomalies": unansweredAnomalies,
 	})
 }

@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"hunt-chat-api/pkg/azure"
@@ -26,6 +28,12 @@ func NewAzureOpenAIService(endpoint, apiKey, apiVersion, chatDeploymentName, emb
 type ChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+// AnomalyQuestionWithChoices AIが生成した質問と選択肢を格納する構造体
+type AnomalyQuestionWithChoices struct {
+	Question string   `json:"question"`
+	Choices  []string `json:"choices"`
 }
 
 // ChatResponse Azure OpenAI チャットレスポンス構造体（互換性のため）
@@ -138,32 +146,59 @@ func (aos *AzureOpenAIService) ExplainForecast(forecastData, factors string) (st
 	return aos.client.ExplainPrediction(ctx, forecastData, factors)
 }
 
-// GenerateQuestionFromAnomaly 異常データから質問を生成する
-func (aos *AzureOpenAIService) GenerateQuestionFromAnomaly(anomaly models.Anomaly) (string, error) {
-	// プロンプトの構築
+// GenerateQuestionAndChoicesFromAnomaly は、異常データから質問と回答の選択肢を生成します。
+func (aos *AzureOpenAIService) GenerateQuestionAndChoicesFromAnomaly(anomaly models.Anomaly) (*AnomalyQuestionWithChoices, error) {
 	prompt := fmt.Sprintf(
-		"あなたは優秀な需要予測コンサルタントです。以下の異常データについて、担当者が原因を特定しやすくなるような、自然で具体的な質問を日本語で1つだけ生成してください。質問以外の余計な言葉は含めないでください。\n\n## 異常データ\n- **発生日**: %s\n- **製品**: %s\n- **事象**: %s\n\n## 質問の例\n- 「この日は何か特別な販促活動やイベントがありましたか？」\n- 「この時期の競合他社の動きで、何か特筆すべきことはありましたか？」\n- 「この日の天候は、過去のデータと比較してどの程度珍しいものだったのでしょうか？」",
+		`あなたは優秀な需要予測コンサルタントです。以下の売上異常データについて、担当者が原因を特定しやすくなるような、自然で具体的な質問と、考えられる原因の選択肢を生成してください。
+		レスポンスは必ず以下のJSON形式で返してください。
+
+		# 異常データ
+		- 発生日: %s
+		- 製品: %s
+		- 事象: %s
+
+		# 出力形式 (JSON)
+		{
+		  "question": "（ユーザーへの自然な質問文）",
+		  "choices": [
+		    "キャンペーン・販促活動",
+		    "天候の影響",
+		    "競合他社の動き",
+		    "特に思い当たる節はない",
+		    "その他（自由記述）"
+		  ]
+		}`,
 		anomaly.Date,
 		anomaly.ProductID,
 		anomaly.Description,
 	)
 
 	messages := []ChatMessage{
-		{Role: "system", Content: "あなたは、需要予測の専門家として、データから読み取れる異常について質問を生成するAIです。"},
+		{Role: "system", Content: "あなたは、JSON形式で応答するAIアシスタントです。"},
 		{Role: "user", Content: prompt},
 	}
 
-	// Azure OpenAI にリクエストを送信
-	resp, err := aos.CreateChatCompletion(messages, 150, 0.7)
+	resp, err := aos.CreateChatCompletion(messages, 300, 0.5)
 	if err != nil {
-		return "", fmt.Errorf("AIからの質問生成に失敗しました: %w", err)
+		return nil, fmt.Errorf("AIからの質問生成に失敗しました: %w", err)
 	}
 
 	if len(resp.Choices) > 0 {
-		return resp.Choices[0].Message.Content, nil
+		var result AnomalyQuestionWithChoices
+		// AIの出力からJSON部分を抽出する（```json ... ``` のようなマークダウン形式を考慮）
+		jsonString := resp.Choices[0].Message.Content
+		if strings.HasPrefix(jsonString, "```json") {
+			jsonString = strings.TrimPrefix(jsonString, "```json")
+			jsonString = strings.TrimSuffix(jsonString, "```")
+		}
+
+		if err := json.Unmarshal([]byte(jsonString), &result); err != nil {
+			return nil, fmt.Errorf("AIの応答JSONの解析に失敗しました: %w. Response: %s", err, jsonString)
+		}
+		return &result, nil
 	}
 
-	return "", fmt.Errorf("AIから有効な回答が得られませんでした")
+	return nil, fmt.Errorf("AIから有効な回答が得られませんでした")
 }
 
 // ProcessChatWithContext は、チャットメッセージと事前の分析コンテキストを受け取り、AIで処理します。
@@ -204,7 +239,7 @@ func (aos *AzureOpenAIService) CreateEmbedding(ctx context.Context, text string)
 // ProcessChatWithHistory は、過去のチャット履歴を活用してより良い回答を生成します。
 func (aos *AzureOpenAIService) ProcessChatWithHistory(chatMessage string, context string, relevantHistory []string) (string, error) {
 	// システムプロンプトを定義
-	systemPrompt := "あなたは、需要予測の専門家アシスタントです。過去の会話履歴から学習し、ユーザーの質問により的確に答えることができます。提供された分析コンテキストと過去の会話履歴を統合的に分析し、需要予測に関する質問に答えてください。"
+	systemPrompt := "あなたは、需要予測の専門家アシ-スタントです。過去の会話履歴から学習し、ユーザーの質問により的確に答えることができます。提供された分析コンテキストと過去の会話履歴を統合的に分析し、需要予測に関する質問に答えてください。"
 
 	// ユーザープロンプトを構築
 	userPrompt := fmt.Sprintf("以下の情報を考慮して、回答してください。\n\n## ユーザーからのメッセージ\n%s\n", chatMessage)
