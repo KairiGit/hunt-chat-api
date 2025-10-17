@@ -1338,60 +1338,117 @@ func (ah *AIHandler) GetAnomalyResponses(c *gin.Context) {
 		return
 	}
 
-	// コレクションが存在することを確認
-	collectionName := "anomaly_responses"
+	ctx := context.Background()
 
-	// Qdrantから全件取得（フィルタなし）
+	// 🆕 新しい対話セッション形式の回答を取得
+	sessionResults, err := ah.vectorStoreService.ScrollAllPoints(
+		ctx,
+		"anomaly_response_sessions",
+		uint32(limit),
+	)
+
+	responses := make([]models.AnomalyResponse, 0)
+
+	if err == nil {
+		// セッションデータを変換
+		for _, result := range sessionResults {
+			if result.Payload == nil {
+				continue
+			}
+
+			// session_jsonから完全なセッションを復元
+			sessionJSONStr := getStringFromPayload(result.Payload, "session_json")
+			if sessionJSONStr == "" {
+				continue
+			}
+
+			var session models.AnomalyResponseSession
+			if err := json.Unmarshal([]byte(sessionJSONStr), &session); err != nil {
+				log.Printf("⚠️ セッションJSON解析エラー: %v", err)
+				continue
+			}
+
+			// 製品IDでフィルタ（指定がある場合）
+			if productID != "" && session.ProductID != productID {
+				continue
+			}
+
+			// 完了したセッションのみ表示
+			if !session.IsComplete {
+				continue
+			}
+
+			// セッション全体の会話を1つの回答として表示
+			conversationText := ""
+			for i, conv := range session.Conversations {
+				conversationText += fmt.Sprintf("Q%d: %s\nA%d: %s\n\n", i+1, conv.Question, i+1, conv.Answer)
+			}
+
+			response := models.AnomalyResponse{
+				ResponseID:  session.SessionID,
+				AnomalyDate: session.AnomalyDate,
+				ProductID:   session.ProductID,
+				Question:    fmt.Sprintf("対話セッション（%d回の質疑応答）", len(session.Conversations)),
+				Answer:      conversationText,
+				AnswerType:  "session",
+				Tags:        session.FinalTags,
+				Impact:      session.FinalImpact,
+				ImpactValue: session.FinalImpactValue,
+				Timestamp:   session.CompletedAt,
+			}
+
+			responses = append(responses, response)
+		}
+	} else {
+		log.Printf("⚠️ セッションコレクションの取得に失敗（コレクションが存在しない可能性）: %v", err)
+	}
+
+	// 🔄 旧形式の回答も取得（互換性のため）
+	collectionName := "anomaly_responses"
 	scrollResults, err := ah.vectorStoreService.ScrollAllPoints(
-		context.Background(),
+		ctx,
 		collectionName,
 		uint32(limit),
 	)
 
 	if err != nil {
-		log.Printf("回答履歴の取得に失敗: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   "回答履歴の取得に失敗しました",
-		})
-		return
-	}
+		log.Printf("⚠️ 旧形式の回答履歴の取得に失敗: %v", err)
+	} else {
+		// 結果をAnomalyResponseに変換
+		for _, result := range scrollResults {
+			if result.Payload == nil {
+				continue
+			}
 
-	// 結果をAnomalyResponseに変換（アプリケーション側でフィルタリング）
-	responses := make([]models.AnomalyResponse, 0)
-	for _, result := range scrollResults {
-		if result.Payload == nil {
-			continue
+			// typeフィールドでフィルタ
+			if typeVal := getStringFromPayload(result.Payload, "type"); typeVal != "anomaly_response" {
+				continue
+			}
+
+			// 製品IDでフィルタ（指定がある場合）
+			resultProductID := getStringFromPayload(result.Payload, "product_id")
+			if productID != "" && resultProductID != productID {
+				continue
+			}
+
+			response := models.AnomalyResponse{
+				ResponseID:  getStringFromPayload(result.Payload, "response_id"),
+				AnomalyDate: getStringFromPayload(result.Payload, "anomaly_date"),
+				ProductID:   resultProductID,
+				Impact:      getStringFromPayload(result.Payload, "impact"),
+				Timestamp:   getStringFromPayload(result.Payload, "timestamp"),
+			}
+
+			if tagsStr := getStringFromPayload(result.Payload, "tags"); tagsStr != "" {
+				response.Tags = strings.Split(tagsStr, ",")
+			}
+
+			if impactVal := getFloatFromPayload(result.Payload, "impact_value"); impactVal != 0 {
+				response.ImpactValue = impactVal
+			}
+
+			responses = append(responses, response)
 		}
-
-		// typeフィールドでフィルタ
-		if typeVal := getStringFromPayload(result.Payload, "type"); typeVal != "anomaly_response" {
-			continue
-		}
-
-		// 製品IDでフィルタ（指定がある場合）
-		resultProductID := getStringFromPayload(result.Payload, "product_id")
-		if productID != "" && resultProductID != productID {
-			continue
-		}
-
-		response := models.AnomalyResponse{
-			ResponseID:  getStringFromPayload(result.Payload, "response_id"),
-			AnomalyDate: getStringFromPayload(result.Payload, "anomaly_date"),
-			ProductID:   resultProductID,
-			Impact:      getStringFromPayload(result.Payload, "impact"),
-			Timestamp:   getStringFromPayload(result.Payload, "timestamp"),
-		}
-
-		if tagsStr := getStringFromPayload(result.Payload, "tags"); tagsStr != "" {
-			response.Tags = strings.Split(tagsStr, ",")
-		}
-
-		if impactVal := getFloatFromPayload(result.Payload, "impact_value"); impactVal != 0 {
-			response.ImpactValue = impactVal
-		}
-
-		responses = append(responses, response)
 	}
 
 	c.JSON(http.StatusOK, models.AnomalyResponseHistory{
@@ -1816,5 +1873,173 @@ func (ah *AIHandler) GetUnansweredAnomalies(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
 		"anomalies": unansweredAnomalies,
+	})
+}
+
+// ========================================
+// 深掘り質問機能の新しいハンドラー
+// ========================================
+
+// SaveAnomalyResponseWithFollowUp 異常回答を保存し、必要なら深掘り質問を返す
+func (ah *AIHandler) SaveAnomalyResponseWithFollowUp(c *gin.Context) {
+	if ah.vectorStoreService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"error":   "データベースサービスが利用できません。",
+		})
+		return
+	}
+
+	var req models.SaveAnomalyResponseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "リクエストパラメータが不正です: " + err.Error(),
+		})
+		return
+	}
+
+	ctx := context.Background()
+	const MAX_FOLLOW_UPS = 2 // 最大深掘り回数
+
+	// セッションIDがあれば既存セッションを取得、なければ新規作成
+	var session *models.AnomalyResponseSession
+	if req.SessionID != "" {
+		// 既存セッションを取得
+		existingSession, err := ah.vectorStoreService.GetAnomalyResponseSession(ctx, req.SessionID)
+		if err != nil {
+			log.Printf("⚠️ セッション取得失敗: %v", err)
+			// セッションが見つからない場合は新規作成
+			session = &models.AnomalyResponseSession{
+				SessionID:     req.SessionID,
+				AnomalyDate:   req.AnomalyDate,
+				ProductID:     req.ProductID,
+				Conversations: []models.Conversation{},
+				IsComplete:    false,
+				FollowUpCount: 0,
+				CreatedAt:     time.Now().Format(time.RFC3339),
+			}
+		} else {
+			session = existingSession
+		}
+	} else {
+		// 新規セッション作成
+		sessionID := uuid.New().String()
+		session = &models.AnomalyResponseSession{
+			SessionID:     sessionID,
+			AnomalyDate:   req.AnomalyDate,
+			ProductID:     req.ProductID,
+			Conversations: []models.Conversation{},
+			IsComplete:    false,
+			FollowUpCount: 0,
+			CreatedAt:     time.Now().Format(time.RFC3339),
+		}
+	}
+
+	// 今回の会話を追加
+	conversation := models.Conversation{
+		Question:   req.Question,
+		Answer:     req.Answer,
+		Timestamp:  time.Now().Format(time.RFC3339),
+		AnswerType: req.AnswerType,
+	}
+	session.Conversations = append(session.Conversations, conversation)
+
+	// 異常の状況を構築
+	anomalyContext := fmt.Sprintf(
+		"日付: %s\n製品ID: %s\n異常の種類: 売上変動",
+		req.AnomalyDate,
+		req.ProductID,
+	)
+
+	// AIに回答を評価させる
+	evaluation, err := ah.azureOpenAIService.EvaluateAnswerCompleteness(
+		anomalyContext,
+		req.Question,
+		req.Answer,
+		session.Conversations[:len(session.Conversations)-1], // 今回分を除く過去の会話
+	)
+
+	if err != nil {
+		log.Printf("❌ AI評価エラー: %v", err)
+		// エラーでも保存は続行
+		evaluation = &models.AnswerEvaluation{
+			IsSufficient:      true, // エラー時は深掘りしない
+			CompletenessScore: 70,
+			Reasoning:         "AI評価に失敗したため、回答を受理します",
+		}
+	}
+
+	log.Printf("📊 AI評価結果: スコア=%d, 十分=%v, 理由=%s",
+		evaluation.CompletenessScore,
+		evaluation.IsSufficient,
+		evaluation.Reasoning,
+	)
+
+	// 深掘りが必要か判定
+	needsFollowUp := !evaluation.IsSufficient &&
+		session.FollowUpCount < MAX_FOLLOW_UPS &&
+		evaluation.FollowUpQuestion != ""
+
+	if needsFollowUp {
+		// 深掘り質問を実行
+		session.FollowUpCount++
+
+		// セッションを保存（まだ完了していない）
+		if err := ah.vectorStoreService.SaveAnomalyResponseSession(ctx, session); err != nil {
+			log.Printf("❌ セッション保存エラー: %v", err)
+		}
+
+		log.Printf("🔍 深掘り質問を生成しました (%d/%d回目)", session.FollowUpCount, MAX_FOLLOW_UPS)
+
+		// 深掘り質問を返す
+		c.JSON(http.StatusOK, models.SaveAnomalyResponseResponse{
+			Success:          true,
+			SessionID:        session.SessionID,
+			Message:          fmt.Sprintf("回答を受け付けました。もう少し詳しく教えてください（%d/%d）", session.FollowUpCount, MAX_FOLLOW_UPS),
+			NeedsFollowUp:    true,
+			Evaluation:       evaluation,
+			FollowUpQuestion: evaluation.FollowUpQuestion,
+			FollowUpChoices:  evaluation.FollowUpChoices,
+		})
+		return
+	}
+
+	// 深掘り不要 → セッションを完了
+	session.IsComplete = true
+	session.CompletedAt = time.Now().Format(time.RFC3339)
+
+	// AIが推奨したタグと影響度を採用
+	if len(evaluation.SuggestedTags) > 0 {
+		session.FinalTags = evaluation.SuggestedTags
+	}
+	if evaluation.SuggestedImpact != "" {
+		session.FinalImpact = evaluation.SuggestedImpact
+		session.FinalImpactValue = evaluation.SuggestedImpactValue
+	}
+
+	// セッション全体をQdrantに保存
+	if err := ah.vectorStoreService.SaveAnomalyResponseSession(ctx, session); err != nil {
+		log.Printf("❌ セッション保存エラー: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "セッションの保存に失敗しました: " + err.Error(),
+		})
+		return
+	}
+
+	log.Printf("✅ 対話セッション完了: %s (製品: %s, 会話数: %d, 深掘り回数: %d)",
+		session.SessionID,
+		session.ProductID,
+		len(session.Conversations),
+		session.FollowUpCount,
+	)
+
+	c.JSON(http.StatusOK, models.SaveAnomalyResponseResponse{
+		Success:       true,
+		SessionID:     session.SessionID,
+		Message:       "回答を保存しました。ありがとうございます！",
+		NeedsFollowUp: false,
+		Evaluation:    evaluation,
 	})
 }

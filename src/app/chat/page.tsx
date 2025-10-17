@@ -78,7 +78,9 @@ export default function ChatPage() {
     await sendAnswer(choice);
   };
 
-  // ★ 回答を送信する共通関数
+  // ★ 回答を送信する共通関数（深掘り質問対応版）
+  const [currentSessionID, setCurrentSessionID] = useState<string | null>(null);
+
   const sendAnswer = async (answer: string) => {
     if (!responseTarget) return;
 
@@ -90,18 +92,17 @@ export default function ChatPage() {
     setChatMessages((prev) => [...prev, userMessage]);
 
     const responsePayload = {
+      session_id: currentSessionID || undefined, // セッションIDがあれば送信
       anomaly_date: responseTarget.date,
       product_id: responseTarget.product_id,
       question: responseTarget.ai_question || '原因は何だと思いますか？',
       answer: answer,
-      answer_type: answer.length > 20 ? 'free_text' : 'multiple_choice',
-      tags: [answer],
-      impact: 'unknown',
-      impact_value: 0,
+      answer_type: answer.length > 20 ? 'free_text' : 'choice',
     };
 
     try {
-      const response = await fetch('/api/proxy/anomaly-response', {
+      // 深掘り対応版のエンドポイントを使用
+      const response = await fetch('/api/proxy/anomaly-response-with-followup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(responsePayload),
@@ -112,40 +113,78 @@ export default function ChatPage() {
         throw new Error(errData.error);
       }
 
-      // AIからの感謝メッセージをチャットに追加
-      const thankYouMessage: ChatMessage = {
-        sender: 'ai',
-        text: `ご回答ありがとうございます！「${answer}」という情報を学習しました。今後の分析精度が向上します。`,
-      };
-      setChatMessages((prev) => [...prev, thankYouMessage]);
+      const data = await response.json();
+      console.log("[ChatPage] Response from backend:", data);
 
-      // 回答済みの異常をリストから削除
-      const updatedAnomalies = unansweredAnomalies.filter(
-        anomaly => anomaly.date !== responseTarget.date || anomaly.product_id !== responseTarget.product_id
-      );
-      setUnansweredAnomalies(updatedAnomalies);
+      // セッションIDを保存
+      if (data.session_id) {
+        setCurrentSessionID(data.session_id);
+      }
 
-      // 次の未回答の異常があれば表示、なければモード終了
-      if (updatedAnomalies.length > 0) {
-        const nextAnomaly = updatedAnomalies[0];
-        setResponseTarget(nextAnomaly);
-        
-        const nextQuestionMessage: ChatMessage = {
+      // 深掘り質問が必要か確認
+      if (data.needs_follow_up && data.follow_up_question) {
+        // 深掘り質問をチャットに追加
+        const followUpMessage: ChatMessage = {
           sender: 'ai',
-          text: `続いて、${nextAnomaly.date} の ${nextAnomaly.product_id} について教えてください。\n\n実績値: ${nextAnomaly.actual_value.toFixed(2)}\n予測値: ${nextAnomaly.expected_value.toFixed(2)}\n\n${nextAnomaly.ai_question || 'この原因は何だと思いますか？'}`,
+          text: `${data.message}\n\n${data.follow_up_question}`,
           type: 'anomaly-question',
-          anomalyData: nextAnomaly,
+          anomalyData: {
+            ...responseTarget,
+            ai_question: data.follow_up_question,
+            question_choices: data.follow_up_choices || [],
+          },
         };
-        setChatMessages((prev) => [...prev, nextQuestionMessage]);
+        setChatMessages((prev) => [...prev, followUpMessage]);
+
+        // 質問内容を更新（次の回答で使用）
+        setResponseTarget({
+          ...responseTarget,
+          ai_question: data.follow_up_question,
+          question_choices: data.follow_up_choices || [],
+        });
+
+        // まだ回答待ちを継続
+        setIsWaitingForResponse(true);
+
       } else {
-        setResponseTarget(null);
-        setIsWaitingForResponse(false);
-        
-        const completionMessage: ChatMessage = {
+        // 深掘り不要 → この異常の対話は完了
+        const thankYouMessage: ChatMessage = {
           sender: 'ai',
-          text: 'すべての異常について回答いただきました。ありがとうございました！学習したデータは今後の分析に活用されます。',
+          text: data.message || `ご回答ありがとうございます！「${answer}」という情報を学習しました。`,
         };
-        setChatMessages((prev) => [...prev, completionMessage]);
+        setChatMessages((prev) => [...prev, thankYouMessage]);
+
+        // セッションIDをリセット
+        setCurrentSessionID(null);
+
+        // 回答済みの異常をリストから削除
+        const updatedAnomalies = unansweredAnomalies.filter(
+          anomaly => anomaly.date !== responseTarget.date || anomaly.product_id !== responseTarget.product_id
+        );
+        setUnansweredAnomalies(updatedAnomalies);
+
+        // 次の未回答の異常があれば表示、なければモード終了
+        if (updatedAnomalies.length > 0) {
+          const nextAnomaly = updatedAnomalies[0];
+          setResponseTarget(nextAnomaly);
+          
+          const nextQuestionMessage: ChatMessage = {
+            sender: 'ai',
+            text: `続いて、${nextAnomaly.date} の ${nextAnomaly.product_id} について教えてください。\n\n実績値: ${nextAnomaly.actual_value.toFixed(2)}\n予測値: ${nextAnomaly.expected_value.toFixed(2)}\n\n${nextAnomaly.ai_question || 'この原因は何だと思いますか？'}`,
+            type: 'anomaly-question',
+            anomalyData: nextAnomaly,
+          };
+          setChatMessages((prev) => [...prev, nextQuestionMessage]);
+        } else {
+          setResponseTarget(null);
+          setIsWaitingForResponse(false);
+          
+          const completionMessage: ChatMessage = {
+            sender: 'ai',
+            text: 'すべての異常について回答いただきました。ありがとうございました！学習したデータは今後の分析に活用されます。',
+          };
+          setChatMessages((prev) => [...prev, completionMessage]);
+        }
       }
 
     } catch (e) {

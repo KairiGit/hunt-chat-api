@@ -156,34 +156,33 @@ func setupApp() *gin.Engine {
 					c.Header("X-Backend-Version", "2025-10-16-anomaly-save-fix-v1")
 					c.Header("X-Handler-Called", "true")
 
-					aiHandler.AnalyzeFile(c)
-				})
+				aiHandler.AnalyzeFile(c)
+			})
 
-				// 異常検知・学習機能API
-				ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)       // 異常検知実行
-				ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)          // 異常対応保存 (単数形)
-				ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)          // 異常対応履歴取得 (複数形)
-				ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)  // 異常対応削除
-				ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses) // すべての異常対応削除
-				ai.GET("/learning-insights", aiHandler.GetLearningInsights)          // 学習洞察取得
+			// 異常検知・学習機能API
+			ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)       // 異常検知実行
+			ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)          // 異常対応保存 (単数形)
+			ai.POST("/anomaly-response-with-followup", aiHandler.SaveAnomalyResponseWithFollowUp) // 深掘り対応版
+			ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)          // 異常対応履歴取得 (複数形)
+			ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)  // 異常対応削除
+			ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses) // すべての異常対応削除
+			ai.GET("/learning-insights", aiHandler.GetLearningInsights)          // 学習洞察取得
 
-				// 分析レポートAPI
-				ai.GET("/analysis-reports", aiHandler.ListAnalysisReports)
-				ai.GET("/analysis-report", aiHandler.GetAnalysisReport)
-				ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)
-				ai.DELETE("/analysis-reports", aiHandler.DeleteAllAnalysisReports)
-				
-				// 未回答の異常取得API
-				ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)
-			}
+			// 分析レポートAPI
+			ai.GET("/analysis-reports", aiHandler.ListAnalysisReports)
+			ai.GET("/analysis-report", aiHandler.GetAnalysisReport)
+			ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)
+			ai.DELETE("/analysis-reports", aiHandler.DeleteAllAnalysisReports)
+
+			// 未回答の異常取得API
+			ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)
 		}
+	}
 
-		app = r
-	})
-	return app
-}
-
-// Handler はVercelからのすべてのリクエストを処理するエントリーポイントです。
+	app = r
+})
+return app
+}// Handler はVercelからのすべてのリクエストを処理するエントリーポイントです。
 func Handler(w http.ResponseWriter, r *http.Request) {
 	// デバッグ: リクエストの詳細をログ出力
 	log.Printf("🔵 [Handler] Request received: %s %s", r.Method, r.URL.Path)

@@ -305,3 +305,127 @@ func (aos *AzureOpenAIService) ExtractMetadataFromMessage(message string) (inten
 
 	return "", nil, fmt.Errorf("メタデータの抽出に失敗しました")
 }
+
+// ========================================
+// 深掘り質問機能のための新しい関数
+// ========================================
+
+// EvaluateAnswerCompleteness ユーザーの回答を評価し、深掘りが必要か判定
+func (aos *AzureOpenAIService) EvaluateAnswerCompleteness(
+	anomalyContext string,
+	question string,
+	answer string,
+	previousConversations []models.Conversation,
+) (*models.AnswerEvaluation, error) {
+	// 過去の会話履歴を構築
+	conversationHistory := ""
+	for i, conv := range previousConversations {
+		conversationHistory += fmt.Sprintf("\n質問%d: %s", i+1, conv.Question)
+		conversationHistory += fmt.Sprintf("\n回答%d: %s\n", i+1, conv.Answer)
+	}
+
+	systemPrompt := `あなたは需要予測システムの異常分析アシスタントです。
+ユーザーが異常について回答した内容を評価し、さらに深掘り質問が必要かを判断してください。
+
+【重要な注意事項】
+- 異常データ（日付、製品ID、実績値、予測値、偏差）は既にシステムが把握しているため、これらを再度尋ねないこと
+- 既に提供された情報を繰り返し尋ねないこと
+- 深掘り質問は「WHY（なぜそうなったか）」「HOW（どのように対処したか）」「IMPACT（どの範囲に影響したか）」に焦点を当てる
+
+【評価基準】
+1. 具体性: 曖昧な表現ではなく、具体的な情報（固有名詞、期間、影響範囲など）が含まれているか
+2. 因果関係: 原因と結果の関連性が明確に説明されているか
+3. 実用性: 今後の需要予測や対策に活用できる情報か（パターン認識可能か）
+4. 網羅性: 異常の全体像を把握するのに十分な情報か
+
+【深掘りの判断】
+- 完全性スコアが80点以上: 十分な情報が得られた（深掘り不要）
+- 60-79点: もう1回深掘り質問をする価値あり
+- 60点未満: 積極的に深掘り質問をすべき
+
+【深掘り質問の例】
+良い例：
+- 「その天候不良は何日間続きましたか？」
+- 「同じ天候パターンは過去にもありましたか？」
+- 「競合の動きに気づいたきっかけは何ですか？」
+- 「キャンペーンの対象製品や割引率を教えてください」
+
+悪い例（既知の情報を尋ねている）：
+- 「売上減少幅はどれくらいでしたか？」← 既にデータで分かっている
+- 「何月何日でしたか？」← 既にデータで分かっている
+- 「製品IDは何ですか？」← 既にデータで分かっている
+
+【出力形式】
+以下のJSON形式で必ず返してください：
+{
+  "is_sufficient": true/false,
+  "completeness_score": 0-100の整数,
+  "missing_aspects": ["欠けている情報1", "欠けている情報2"],
+  "follow_up_question": "次に聞くべき質問（is_sufficient=falseの場合のみ。既知の情報は尋ねない）",
+  "follow_up_choices": ["選択肢1", "選択肢2", "選択肢3", "選択肢4", "その他（自由記述）"],
+  "reasoning": "判断理由の簡潔な説明",
+  "suggested_tags": ["推奨タグ1", "推奨タグ2"],
+  "suggested_impact": "positive/negative/neutral",
+  "suggested_impact_value": 推定影響度（-100〜100の数値）
+}`
+
+	userPrompt := fmt.Sprintf(`【異常の状況】
+%s
+
+【これまでの会話】%s
+
+【今回の質問】
+%s
+
+【ユーザーの回答】
+%s
+
+上記の回答を評価し、JSON形式で返してください。`,
+		anomalyContext,
+		conversationHistory,
+		question,
+		answer,
+	)
+
+	messages := []ChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+
+	resp, err := aos.CreateChatCompletion(messages, 1000, 0.7)
+	if err != nil {
+		return nil, fmt.Errorf("回答評価中にエラーが発生しました: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("AIから回答が得られませんでした")
+	}
+
+	content := resp.Choices[0].Message.Content
+	
+	// JSONを抽出（マークダウンのコードブロックに囲まれている場合に対応）
+	jsonContent := content
+	if strings.Contains(content, "```json") {
+		start := strings.Index(content, "```json") + 7
+		end := strings.Index(content[start:], "```")
+		if end > 0 {
+			jsonContent = content[start : start+end]
+		}
+	} else if strings.Contains(content, "```") {
+		start := strings.Index(content, "```") + 3
+		end := strings.Index(content[start:], "```")
+		if end > 0 {
+			jsonContent = content[start : start+end]
+		}
+	}
+
+	jsonContent = strings.TrimSpace(jsonContent)
+
+	// JSONをパース
+	var evaluation models.AnswerEvaluation
+	if err := json.Unmarshal([]byte(jsonContent), &evaluation); err != nil {
+		return nil, fmt.Errorf("AI回答のJSON解析に失敗しました: %w\nContent: %s", err, content)
+	}
+
+	return &evaluation, nil
+}

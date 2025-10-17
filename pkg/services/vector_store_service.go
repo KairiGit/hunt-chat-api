@@ -935,3 +935,103 @@ func (s *VectorStoreService) HasAnomalyResponse(ctx context.Context, anomalyDate
 	// 結果が1件以上あれば、回答は存在すると判断
 	return len(searchResults) > 0, nil
 }
+
+// ========================================
+// 深掘り質問機能のための新しい関数
+// ========================================
+
+// SaveAnomalyResponseSession 異常回答セッション全体をQdrantに保存
+func (s *VectorStoreService) SaveAnomalyResponseSession(ctx context.Context, session *models.AnomalyResponseSession) error {
+	collectionName := "anomaly_response_sessions"
+
+	// セッション全体をJSONに変換
+	sessionJSON, err := json.Marshal(session)
+	if err != nil {
+		return fmt.Errorf("セッションのJSON化に失敗: %w", err)
+	}
+
+	// 検索用のテキストを構築（全会話を連結）
+	var conversationText string
+	for i, conv := range session.Conversations {
+		conversationText += fmt.Sprintf("\n質問%d: %s\n回答%d: %s", i+1, conv.Question, i+1, conv.Answer)
+	}
+
+	searchText := fmt.Sprintf(
+		"日付: %s\n製品ID: %s\n会話履歴:%s\nタグ: %s\n影響: %s",
+		session.AnomalyDate,
+		session.ProductID,
+		conversationText,
+		session.FinalTags,
+		session.FinalImpact,
+	)
+
+	// メタデータを準備
+	metadata := map[string]interface{}{
+		"type":               "anomaly_response_session",
+		"session_id":         session.SessionID,
+		"anomaly_date":       session.AnomalyDate,
+		"product_id":         session.ProductID,
+		"is_complete":        session.IsComplete,
+		"follow_up_count":    session.FollowUpCount,
+		"conversation_count": len(session.Conversations),
+		"created_at":         session.CreatedAt,
+		"session_json":       string(sessionJSON), // 完全なセッションデータを保存
+	}
+
+	if session.CompletedAt != "" {
+		metadata["completed_at"] = session.CompletedAt
+	}
+
+	// Qdrantに保存
+	err = s.StoreDocument(ctx, collectionName, session.SessionID, searchText, metadata)
+	if err != nil {
+		return fmt.Errorf("セッションの保存に失敗: %w", err)
+	}
+
+	log.Printf("✅ セッションを保存しました: %s (完了: %v, 会話数: %d)",
+		session.SessionID, session.IsComplete, len(session.Conversations))
+
+	return nil
+}
+
+// GetAnomalyResponseSession セッションIDから異常回答セッションを取得
+func (s *VectorStoreService) GetAnomalyResponseSession(ctx context.Context, sessionID string) (*models.AnomalyResponseSession, error) {
+	collectionName := "anomaly_response_sessions"
+
+	// Qdrantから取得
+	points, err := s.qdrantClient.Get(ctx, &qdrant.GetPoints{
+		CollectionName: collectionName,
+		Ids:            []*qdrant.PointId{{PointIdOptions: &qdrant.PointId_Uuid{Uuid: sessionID}}},
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("セッション取得に失敗: %w", err)
+	}
+
+	if len(points.GetResult()) == 0 {
+		return nil, fmt.Errorf("セッションが見つかりません: %s", sessionID)
+	}
+
+	// session_jsonフィールドから完全なセッションデータを復元
+	payload := points.GetResult()[0].Payload
+	sessionJSONValue, ok := payload["session_json"]
+	if !ok {
+		return nil, fmt.Errorf("session_jsonフィールドが見つかりません")
+	}
+
+	sessionJSONStr := ""
+	if strVal := sessionJSONValue.GetStringValue(); strVal != "" {
+		sessionJSONStr = strVal
+	} else {
+		return nil, fmt.Errorf("session_jsonの値が取得できません")
+	}
+
+	// JSONをパース
+	var session models.AnomalyResponseSession
+	if err := json.Unmarshal([]byte(sessionJSONStr), &session); err != nil {
+		return nil, fmt.Errorf("セッションのJSON解析に失敗: %w", err)
+	}
+
+	return &session, nil
+}

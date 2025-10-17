@@ -405,3 +405,66 @@ type LearningInsightsResponse struct {
 	Total    int               `json:"total"`
 	Message  string            `json:"message,omitempty"`
 }
+
+// ========================================
+// 深掘り質問機能の新しいデータ構造
+// ========================================
+
+// Conversation 1つの質疑応答ペア
+type Conversation struct {
+	Question        string   `json:"question"`
+	QuestionChoices []string `json:"question_choices,omitempty"`
+	Answer          string   `json:"answer"`
+	Timestamp       string   `json:"timestamp"`
+	AnswerType      string   `json:"answer_type"` // "choice" or "free_text"
+}
+
+// AnomalyResponseSession 異常に対する対話セッション全体
+type AnomalyResponseSession struct {
+	SessionID       string         `json:"session_id"`        // セッション識別子
+	AnomalyDate     string         `json:"anomaly_date"`      // 異常発生日
+	ProductID       string         `json:"product_id"`        // 製品ID
+	Conversations   []Conversation `json:"conversations"`     // 質疑応答の履歴
+	IsComplete      bool           `json:"is_complete"`       // 対話が完了したか
+	FollowUpCount   int            `json:"follow_up_count"`   // 深掘り質問の回数
+	FinalTags       []string       `json:"final_tags"`        // 最終的に付与されたタグ
+	FinalImpact     string         `json:"final_impact"`      // 最終的な影響評価
+	FinalImpactValue float64       `json:"final_impact_value"` // 最終的な影響値
+	CreatedAt       string         `json:"created_at"`
+	CompletedAt     string         `json:"completed_at,omitempty"`
+	UserID          string         `json:"user_id,omitempty"`
+}
+
+// AnswerEvaluation AIによる回答の評価結果
+type AnswerEvaluation struct {
+	IsSufficient       bool     `json:"is_sufficient"`        // 十分な情報が得られたか
+	CompletenessScore  int      `json:"completeness_score"`   // 完全性スコア (0-100)
+	MissingAspects     []string `json:"missing_aspects"`      // 欠けている情報
+	FollowUpQuestion   string   `json:"follow_up_question"`   // 次の質問
+	FollowUpChoices    []string `json:"follow_up_choices"`    // 次の質問の選択肢
+	Reasoning          string   `json:"reasoning"`            // 判断理由
+	SuggestedTags      []string `json:"suggested_tags"`       // 推奨されるタグ
+	SuggestedImpact    string   `json:"suggested_impact"`     // 推奨される影響度
+	SuggestedImpactValue float64 `json:"suggested_impact_value"` // 推奨される影響値
+}
+
+// SaveAnomalyResponseRequest 異常回答保存リクエスト（深掘り対応版）
+type SaveAnomalyResponseRequest struct {
+	SessionID   string `json:"session_id,omitempty"`   // 既存セッションID（続きの場合）
+	AnomalyDate string `json:"anomaly_date" binding:"required"`
+	ProductID   string `json:"product_id" binding:"required"`
+	Question    string `json:"question" binding:"required"`
+	Answer      string `json:"answer" binding:"required"`
+	AnswerType  string `json:"answer_type"` // "choice", "free_text"
+}
+
+// SaveAnomalyResponseResponse 異常回答保存レスポンス（深掘り対応版）
+type SaveAnomalyResponseResponse struct {
+	Success          bool             `json:"success"`
+	SessionID        string           `json:"session_id"`
+	Message          string           `json:"message"`
+	NeedsFollowUp    bool             `json:"needs_follow_up"`     // 深掘り質問が必要か
+	Evaluation       *AnswerEvaluation `json:"evaluation,omitempty"` // 評価結果
+	FollowUpQuestion string           `json:"follow_up_question,omitempty"` // 次の質問
+	FollowUpChoices  []string         `json:"follow_up_choices,omitempty"`  // 次の質問の選択肢
+}
