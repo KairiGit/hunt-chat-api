@@ -172,6 +172,9 @@ func setupApp() *gin.Engine {
 				ai.GET("/analysis-report", aiHandler.GetAnalysisReport)
 				ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)
 				ai.DELETE("/analysis-reports", aiHandler.DeleteAllAnalysisReports)
+				
+				// 未回答の異常取得API
+				ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)
 			}
 		}
 
