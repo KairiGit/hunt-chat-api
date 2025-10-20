@@ -402,7 +402,7 @@ func (aos *AzureOpenAIService) EvaluateAnswerCompleteness(
 	}
 
 	content := resp.Choices[0].Message.Content
-	
+
 	// JSONを抽出（マークダウンのコードブロックに囲まれている場合に対応）
 	jsonContent := content
 	if strings.Contains(content, "```json") {

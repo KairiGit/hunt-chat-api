@@ -137,25 +137,25 @@ func main() {
 			ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
 			ai.POST("/chat-input", aiHandler.ChatInput)
 			ai.POST("/analyze-file", aiHandler.AnalyzeFile)
-		ai.POST("/predict-sales", aiHandler.PredictSales)                    // 売上予測API
-		ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)       // 異常検知API
-		ai.POST("/forecast-product", aiHandler.ForecastProductDemand)        // 製品別需要予測API
-		ai.POST("/analyze-weekly", aiHandler.AnalyzeWeeklySales)             // 週次分析API
-		ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)          // 異常への回答保存API
-		ai.POST("/anomaly-response-with-followup", aiHandler.SaveAnomalyResponseWithFollowUp) // 深掘り対応版
-		ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)          // 回答履歴取得API
-		ai.GET("/learning-insights", aiHandler.GetLearningInsights)          // AI学習洞察取得API
-		ai.GET("/analysis-reports", aiHandler.ListAnalysisReports)           // 分析レポート一覧取得API
-		ai.DELETE("/analysis-reports", aiHandler.DeleteAllAnalysisReports)   // 全分析レポート削除API
-		ai.GET("/analysis-report", aiHandler.GetAnalysisReport)              // 分析レポート詳細取得API
-		ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)        // 分析レポート削除API
-		ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)  // 回答削除API
-		ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses) // 全回答削除API
-		ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)    // 未回答の異常を取得
+			ai.POST("/predict-sales", aiHandler.PredictSales)                                     // 売上予測API
+			ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)                        // 異常検知API
+			ai.POST("/forecast-product", aiHandler.ForecastProductDemand)                         // 製品別需要予測API
+			ai.POST("/analyze-weekly", aiHandler.AnalyzeWeeklySales)                              // 週次分析API
+			ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)                           // 異常への回答保存API
+			ai.POST("/anomaly-response-with-followup", aiHandler.SaveAnomalyResponseWithFollowUp) // 深掘り対応版
+			ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)                           // 回答履歴取得API
+			ai.GET("/learning-insights", aiHandler.GetLearningInsights)                           // AI学習洞察取得API
+			ai.GET("/analysis-reports", aiHandler.ListAnalysisReports)                            // 分析レポート一覧取得API
+			ai.DELETE("/analysis-reports", aiHandler.DeleteAllAnalysisReports)                    // 全分析レポート削除API
+			ai.GET("/analysis-report", aiHandler.GetAnalysisReport)                               // 分析レポート詳細取得API
+			ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)                         // 分析レポート削除API
+			ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)                   // 回答削除API
+			ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses)                  // 全回答削除API
+			ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)                     // 未回答の異常を取得
+		}
+	} // サーバー起動
+	log.Println("Starting HUNT Chat-API server on :8080")
+	if err := r.Run(":8080"); err != nil {
+		log.Fatal("Failed to start server:", err)
 	}
-} // サーバー起動
-log.Println("Starting HUNT Chat-API server on :8080")
-if err := r.Run(":8080"); err != nil {
-	log.Fatal("Failed to start server:", err)
-}
 }

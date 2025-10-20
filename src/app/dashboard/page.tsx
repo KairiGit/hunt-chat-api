@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -483,9 +484,11 @@ export default function DashboardPage() {
                       <div className="mt-4 p-4 bg-white dark:bg-gray-900 rounded border">
                         <p className="font-semibold text-sm mb-2">🤖 AIからの質問</p>
                         <p className="text-sm whitespace-pre-wrap">{anomaly.ai_question}</p>
-                        <Button className="mt-3" size="sm" variant="outline">
-                          回答する
-                        </Button>
+                        <Link href="/anomaly-response">
+                          <Button className="mt-3" size="sm" variant="outline">
+                            回答する
+                          </Button>
+                        </Link>
                       </div>
                     )}
                   </CardContent>

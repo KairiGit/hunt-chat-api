@@ -75,7 +75,11 @@ export default function RootLayout({
                   </div>
                   <Link href="/chat" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
                     <span className="mr-2">💬</span>
-                    AIチャット
+                    分析チャット
+                  </Link>
+                  <Link href="/anomaly-response" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
+                    <span className="mr-2">⚠️</span>
+                    異常対応
                   </Link>
                   <Link href="/learning" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
                     <span className="mr-2">🧠</span>
