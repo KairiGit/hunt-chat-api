@@ -246,7 +246,14 @@ docker run -d \
 ### 4. システムドキュメントの投入
 
 ```bash
+# ローカル環境のQdrantに投入
 make init-docs
+
+# 本番環境のQdrant Cloudに投入（手動実行のみ・要確認プロンプト）
+make init-docs-prod
+
+# CI/CD環境での自動実行（環境変数 ENABLE_INIT_DOCS=true が必要）
+make init-docs-auto
 ```
 
 このコマンドで以下がQdrantに投入されます：
@@ -254,6 +261,13 @@ make init-docs
 - API_MANUAL.md
 - IMPLEMENTATION_SUMMARY.md
 - その他の.mdファイル
+
+**注意:**
+- `make init-docs` は環境変数`QDRANT_URL`で接続先が決まります
+- 未設定の場合はローカル（`127.0.0.1:6334`）に接続
+- 本番環境では環境変数で **Qdrant Cloud** に自動接続します
+- `make init-docs-prod` はCI環境では自動的にスキップされます（誤実行防止）
+- Vercelなどで自動実行したい場合は `ENABLE_INIT_DOCS=true` を設定してください
 
 ### 5. バックエンドの起動
 
