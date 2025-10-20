@@ -11,7 +11,8 @@ import { useAppContext, type ChatMessage } from '@/contexts/AppContext';
 import type { AnomalyDetection } from '@/types/analysis';
 
 export default function AnomalyResponsePage() {
-  const { chatMessages, setChatMessages } = useAppContext();
+  const { anomalyChatMessages, setAnomalyChatMessages } = useAppContext();
+  const chatMessages = anomalyChatMessages;
 
   const [chatInput, setChatInput] = useState('');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -46,7 +47,7 @@ export default function AnomalyResponsePage() {
       type: 'anomaly-question',
       anomalyData: firstAnomaly,
     };
-    setChatMessages((prev) => [...prev, questionMessage]);
+    setAnomalyChatMessages((prev) => [...prev, questionMessage]);
   };
 
   // 選択肢ボタンをクリックした時の処理
@@ -63,7 +64,7 @@ export default function AnomalyResponsePage() {
       sender: 'user',
       text: answer,
     };
-    setChatMessages((prev) => [...prev, userMessage]);
+    setAnomalyChatMessages((prev) => [...prev, userMessage]);
 
     const responsePayload = {
       session_id: currentSessionID || undefined,
@@ -104,7 +105,7 @@ export default function AnomalyResponsePage() {
             question_choices: data.follow_up_choices || [],
           },
         };
-        setChatMessages((prev) => [...prev, followUpMessage]);
+        setAnomalyChatMessages((prev) => [...prev, followUpMessage]);
 
         setResponseTarget({
           ...responseTarget,
@@ -119,7 +120,7 @@ export default function AnomalyResponsePage() {
           sender: 'ai',
           text: data.message || `ご回答ありがとうございます！「${answer}」という情報を学習しました。`,
         };
-        setChatMessages((prev) => [...prev, thankYouMessage]);
+        setAnomalyChatMessages((prev) => [...prev, thankYouMessage]);
 
         setCurrentSessionID(null);
 
@@ -138,7 +139,7 @@ export default function AnomalyResponsePage() {
             type: 'anomaly-question',
             anomalyData: nextAnomaly,
           };
-          setChatMessages((prev) => [...prev, nextQuestionMessage]);
+          setAnomalyChatMessages((prev) => [...prev, nextQuestionMessage]);
         } else {
           setResponseTarget(null);
           setIsWaitingForResponse(false);
@@ -147,7 +148,7 @@ export default function AnomalyResponsePage() {
             sender: 'ai',
             text: 'すべての異常について回答いただきました。ありがとうございました！学習したデータは今後の分析に活用されます。',
           };
-          setChatMessages((prev) => [...prev, completionMessage]);
+          setAnomalyChatMessages((prev) => [...prev, completionMessage]);
         }
       }
 
@@ -157,7 +158,7 @@ export default function AnomalyResponsePage() {
         sender: 'ai',
         text: `エラー: 回答の保存中に問題が発生しました。(${errorMessage})`,
       };
-      setChatMessages((prev) => [...prev, errorResponseMessage]);
+      setAnomalyChatMessages((prev) => [...prev, errorResponseMessage]);
     }
   };
 

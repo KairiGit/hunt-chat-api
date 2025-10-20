@@ -7,14 +7,27 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Bot, User, MessageSquare, Info } from 'lucide-react';
-import { useAppContext, type ChatMessage, type ContextSource } from '@/contexts/AppContext';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Bot, User, MessageSquare, Info, Plus, X, Edit2, Check } from 'lucide-react';
+import { useAppContext, type ChatMessage, type ContextSource, type ChatThread } from '@/contexts/AppContext';
 
 export default function ChatPage() {
-  const { analysisSummary, chatMessages, setChatMessages } = useAppContext();
+  const { 
+    analysisSummary, 
+    chatThreads, 
+    setChatThreads, 
+    activeThreadId, 
+    setActiveThreadId 
+  } = useAppContext();
+  
+  // アクティブなスレッドを取得
+  const activeThread = chatThreads.find(t => t.id === activeThreadId) || chatThreads[0];
+  const chatMessages = activeThread?.messages || [];
 
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [editingThreadName, setEditingThreadName] = useState('');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   // チャットログが更新されたら一番下にスクロール
@@ -27,13 +40,66 @@ export default function ChatPage() {
     }
   }, [chatMessages, chatLoading]);
 
+  // アクティブスレッドのメッセージを更新するヘルパー関数
+  const updateActiveThreadMessages = (updater: (messages: ChatMessage[]) => ChatMessage[]) => {
+    setChatThreads(threads => 
+      threads.map(thread => 
+        thread.id === activeThreadId
+          ? { ...thread, messages: updater(thread.messages), updatedAt: new Date().toISOString() }
+          : thread
+      )
+    );
+  };
+
+  // 新しいスレッドを作成
+  const createNewThread = () => {
+    const threadNumber = chatThreads.length + 1;
+    const newThread: ChatThread = {
+      id: `thread-${Date.now()}`,
+      name: `スレッド ${threadNumber}`,
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setChatThreads([...chatThreads, newThread]);
+    setActiveThreadId(newThread.id);
+  };
+
+  // スレッドを削除
+  const deleteThread = (threadId: string) => {
+    if (chatThreads.length === 1) return; // 最後のスレッドは削除不可
+    const newThreads = chatThreads.filter(t => t.id !== threadId);
+    setChatThreads(newThreads);
+    if (activeThreadId === threadId) {
+      setActiveThreadId(newThreads[0].id);
+    }
+  };
+
+  // スレッド名を編集
+  const startEditingThreadName = (thread: ChatThread) => {
+    setEditingThreadId(thread.id);
+    setEditingThreadName(thread.name);
+  };
+
+  const saveThreadName = () => {
+    if (editingThreadId && editingThreadName.trim()) {
+      setChatThreads(threads =>
+        threads.map(t =>
+          t.id === editingThreadId ? { ...t, name: editingThreadName.trim() } : t
+        )
+      );
+    }
+    setEditingThreadId(null);
+    setEditingThreadName('');
+  };
+
   // 通常のチャット送信処理
   const handleChatSubmit = async () => {
     if (!chatInput.trim() || chatLoading) return;
 
     const userMessage: ChatMessage = { sender: 'user', text: chatInput };
     const aiEmptyMessage: ChatMessage = { sender: 'ai', text: '', contextSources: [] };
-    setChatMessages((prev) => [...prev, userMessage, aiEmptyMessage]);
+    updateActiveThreadMessages(prev => [...prev, userMessage, aiEmptyMessage]);
     setChatLoading(true);
     setChatInput('');
 
@@ -58,7 +124,7 @@ export default function ChatPage() {
       const contextSources: ContextSource[] = data.response?.context_sources || [];
       
       // AIメッセージを更新
-      setChatMessages((prev) => {
+      updateActiveThreadMessages(prev => {
         const last = prev[prev.length - 1];
         if (last && last.sender === 'ai') {
           return [...prev.slice(0, -1), { 
@@ -71,7 +137,7 @@ export default function ChatPage() {
       });
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred';
-      setChatMessages((prev) => {
+      updateActiveThreadMessages(prev => {
         const last = prev[prev.length - 1];
         if (last && last.sender === 'ai' && last.text === '') {
           return [...prev.slice(0, -1), { sender: 'ai', text: `エラー: ${errorMessage}` }];
@@ -96,18 +162,77 @@ export default function ChatPage() {
   return (
     <div className="container mx-auto p-4 max-w-4xl">
       <Card className="h-[calc(100vh-120px)] flex flex-col">
-        <CardHeader className="flex-shrink-0 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-b">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-500 rounded-lg">
-              <MessageSquare className="h-6 w-6 text-white" />
+        <CardHeader className="flex-shrink-0 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-b pb-2">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-500 rounded-lg">
+                <MessageSquare className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <CardTitle className="text-2xl text-purple-900 dark:text-purple-100">AI分析チャット</CardTitle>
+                <CardDescription className="text-purple-700 dark:text-purple-300">
+                  分析結果について質問したり、過去のデータを検索できます
+                </CardDescription>
+              </div>
             </div>
-            <div>
-              <CardTitle className="text-2xl text-purple-900 dark:text-purple-100">AI分析チャット</CardTitle>
-              <CardDescription className="text-purple-700 dark:text-purple-300">
-                分析結果について質問したり、過去のデータを検索できます
-              </CardDescription>
-            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={createNewThread}
+              className="flex items-center gap-2 border-purple-200 text-purple-700 hover:bg-purple-50"
+            >
+              <Plus className="h-4 w-4" />
+              新規スレッド
+            </Button>
           </div>
+          
+          {/* スレッド切り替えタブ */}
+          <Tabs value={activeThreadId} onValueChange={setActiveThreadId} className="w-full">
+            <TabsList className="w-full justify-start overflow-x-auto bg-purple-100/50 dark:bg-purple-900/20">
+              {chatThreads.map((thread) => (
+                <div key={thread.id} className="flex items-center gap-1 group">
+                  {editingThreadId === thread.id ? (
+                    <div className="flex items-center gap-1 px-2">
+                      <input
+                        type="text"
+                        value={editingThreadName}
+                        onChange={(e) => setEditingThreadName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveThreadName();
+                          if (e.key === 'Escape') setEditingThreadId(null);
+                        }}
+                        className="w-24 px-2 py-1 text-sm border rounded"
+                        autoFocus
+                      />
+                      <button onClick={saveThreadName} className="p-1 hover:bg-purple-200 rounded">
+                        <Check className="h-3 w-3 text-green-600" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <TabsTrigger value={thread.id} className="relative">
+                        {thread.name}
+                      </TabsTrigger>
+                      <button
+                        onClick={() => startEditingThreadName(thread)}
+                        className="p-1 opacity-0 group-hover:opacity-100 hover:bg-purple-200 dark:hover:bg-purple-800 rounded transition-opacity"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                      </button>
+                      {chatThreads.length > 1 && (
+                        <button
+                          onClick={() => deleteThread(thread.id)}
+                          className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-200 dark:hover:bg-red-900 rounded transition-opacity"
+                        >
+                          <X className="h-3 w-3 text-red-600" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </TabsList>
+          </Tabs>
         </CardHeader>
 
         <CardContent className="flex-1 p-0 min-h-0">

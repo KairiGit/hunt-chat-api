@@ -12,9 +12,9 @@ type ChatRequest struct {
 
 // ContextSource コンテキストソースの情報（スコア付き）
 type ContextSource struct {
-	Type     string  `json:"type"`      // "chat_history", "document", "analysis_report", "file_analysis"
-	FileName string  `json:"file_name"` // ファイル名やドキュメント名
-	Score    float32 `json:"score"`     // 類似度スコア (0.0-1.0)
+	Type     string  `json:"type"`           // "chat_history", "document", "analysis_report", "file_analysis"
+	FileName string  `json:"file_name"`      // ファイル名やドキュメント名
+	Score    float32 `json:"score"`          // 類似度スコア (0.0-1.0)
 	Date     string  `json:"date,omitempty"` // 日付（チャット履歴や分析レポートの場合）
 }
 

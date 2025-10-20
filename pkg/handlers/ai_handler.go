@@ -645,7 +645,7 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 			if textPayload, ok := point.Payload["text"]; ok {
 				if text, ok := textPayload.GetKind().(*qdrant.Value_StringValue); ok {
 					ragContext.WriteString(fmt.Sprintf("- %s (類似度: %.2f)\n", text.StringValue, point.Score))
-					
+
 					// ファイル名を取得（メタデータから）
 					fileName := "ドキュメント"
 					if fileNamePayload, ok := point.Payload["file_name"]; ok {
@@ -653,7 +653,7 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 							fileName = fileNameVal.StringValue
 						}
 					}
-					
+
 					contextSources = append(contextSources, models.ContextSource{
 						Type:     "document",
 						FileName: fileName,
