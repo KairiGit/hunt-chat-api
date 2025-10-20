@@ -44,6 +44,16 @@ interface AppContextType {
   anomalyChatMessages: ChatMessage[];
   setAnomalyChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   
+  // 異常対応セッション状態
+  anomalyResponseTarget: AnomalyDetection | null;
+  setAnomalyResponseTarget: React.Dispatch<React.SetStateAction<AnomalyDetection | null>>;
+  anomalyIsWaitingForResponse: boolean;
+  setAnomalyIsWaitingForResponse: React.Dispatch<React.SetStateAction<boolean>>;
+  anomalyCurrentSessionID: string | null;
+  setAnomalyCurrentSessionID: React.Dispatch<React.SetStateAction<string | null>>;
+  anomalyUnansweredList: AnomalyDetection[];
+  setAnomalyUnansweredList: React.Dispatch<React.SetStateAction<AnomalyDetection[]>>;
+  
   // 後方互換性のため残す（使用は非推奨）
   chatMessages: ChatMessage[];
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -60,6 +70,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeThreadId, setActiveThreadId] = useState<string>('');
   const [anomalyChatMessages, setAnomalyChatMessages] = useState<ChatMessage[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]); // 後方互換性用
+  
+  // 異常対応セッション状態
+  const [anomalyResponseTarget, setAnomalyResponseTarget] = useState<AnomalyDetection | null>(null);
+  const [anomalyIsWaitingForResponse, setAnomalyIsWaitingForResponse] = useState<boolean>(false);
+  const [anomalyCurrentSessionID, setAnomalyCurrentSessionID] = useState<string | null>(null);
+  const [anomalyUnansweredList, setAnomalyUnansweredList] = useState<AnomalyDetection[]>([]);
+  
   const [isHydrated, setIsHydrated] = useState(false);
 
   // クライアントサイドでのみlocalStorageから復元
@@ -138,6 +155,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
       
+      // 異常対応セッション状態の復元
+      const savedAnomalySession = localStorage.getItem('anomalySessionState');
+      if (savedAnomalySession) {
+        try {
+          const parsed = JSON.parse(savedAnomalySession);
+          if (parsed.responseTarget) setAnomalyResponseTarget(parsed.responseTarget);
+          if (parsed.isWaitingForResponse !== undefined) setAnomalyIsWaitingForResponse(parsed.isWaitingForResponse);
+          if (parsed.currentSessionID) setAnomalyCurrentSessionID(parsed.currentSessionID);
+          if (parsed.unansweredList) setAnomalyUnansweredList(parsed.unansweredList);
+        } catch (e) {
+          console.error('Failed to parse anomaly session state from localStorage:', e);
+        }
+      }
+      
       setIsHydrated(true);
     }
   }, []);
@@ -182,6 +213,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [anomalyChatMessages, isHydrated]);
 
+  // 異常対応セッション状態が変更されたらlocalStorageに保存
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
+      const sessionState = {
+        responseTarget: anomalyResponseTarget,
+        isWaitingForResponse: anomalyIsWaitingForResponse,
+        currentSessionID: anomalyCurrentSessionID,
+        unansweredList: anomalyUnansweredList,
+      };
+      localStorage.setItem('anomalySessionState', JSON.stringify(sessionState));
+    }
+  }, [anomalyResponseTarget, anomalyIsWaitingForResponse, anomalyCurrentSessionID, anomalyUnansweredList, isHydrated]);
+
   const value = {
     analysisSummary,
     setAnalysisSummary,
@@ -191,6 +235,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setActiveThreadId,
     anomalyChatMessages,
     setAnomalyChatMessages,
+    anomalyResponseTarget,
+    setAnomalyResponseTarget,
+    anomalyIsWaitingForResponse,
+    setAnomalyIsWaitingForResponse,
+    anomalyCurrentSessionID,
+    setAnomalyCurrentSessionID,
+    anomalyUnansweredList,
+    setAnomalyUnansweredList,
     chatMessages,
     setChatMessages,
   };

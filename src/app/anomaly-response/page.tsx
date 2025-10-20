@@ -12,17 +12,32 @@ import { useAppContext, type ChatMessage } from '@/contexts/AppContext';
 import type { AnomalyDetection } from '@/types/analysis';
 
 export default function AnomalyResponsePage() {
-  const { anomalyChatMessages, setAnomalyChatMessages } = useAppContext();
+  const { 
+    anomalyChatMessages, 
+    setAnomalyChatMessages,
+    anomalyResponseTarget,
+    setAnomalyResponseTarget,
+    anomalyIsWaitingForResponse,
+    setAnomalyIsWaitingForResponse,
+    anomalyCurrentSessionID,
+    setAnomalyCurrentSessionID,
+    anomalyUnansweredList,
+    setAnomalyUnansweredList,
+  } = useAppContext();
   const chatMessages = anomalyChatMessages;
 
   const [chatInput, setChatInput] = useState('');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // 異常対応専用のstate
-  const [unansweredAnomalies, setUnansweredAnomalies] = useState<AnomalyDetection[]>([]);
-  const [responseTarget, setResponseTarget] = useState<AnomalyDetection | null>(null);
-  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
-  const [currentSessionID, setCurrentSessionID] = useState<string | null>(null);
+  // ローカルエイリアス（コードの変更を最小限にするため）
+  const unansweredAnomalies = anomalyUnansweredList;
+  const setUnansweredAnomalies = setAnomalyUnansweredList;
+  const responseTarget = anomalyResponseTarget;
+  const setResponseTarget = setAnomalyResponseTarget;
+  const isWaitingForResponse = anomalyIsWaitingForResponse;
+  const setIsWaitingForResponse = setAnomalyIsWaitingForResponse;
+  const currentSessionID = anomalyCurrentSessionID;
+  const setCurrentSessionID = setAnomalyCurrentSessionID;
 
   // チャットログが更新されたら一番下にスクロール
   useEffect(() => {
