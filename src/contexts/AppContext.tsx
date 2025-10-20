@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import type { AnomalyDetection } from '@/types/analysis';
 
 export type MessageType = 'normal' | 'anomaly-question';
@@ -25,8 +25,55 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // アプリケーション全体をラップするProviderコンポーネント
 export function AppProvider({ children }: { children: ReactNode }) {
+  // localStorageから初期値を復元
   const [analysisSummary, setAnalysisSummary] = useState<string>('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // クライアントサイドでのみlocalStorageから復元
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedSummary = localStorage.getItem('analysisSummary');
+      const savedMessages = localStorage.getItem('chatMessages');
+      
+      if (savedSummary) {
+        setAnalysisSummary(savedSummary);
+      }
+      
+      if (savedMessages) {
+        try {
+          const parsed = JSON.parse(savedMessages);
+          setChatMessages(parsed);
+        } catch (e) {
+          console.error('Failed to parse chat messages from localStorage:', e);
+        }
+      }
+      
+      setIsHydrated(true);
+    }
+  }, []);
+
+  // analysisSummaryが変更されたらlocalStorageに保存
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
+      if (analysisSummary) {
+        localStorage.setItem('analysisSummary', analysisSummary);
+      } else {
+        localStorage.removeItem('analysisSummary');
+      }
+    }
+  }, [analysisSummary, isHydrated]);
+
+  // chatMessagesが変更されたらlocalStorageに保存
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
+      if (chatMessages.length > 0) {
+        localStorage.setItem('chatMessages', JSON.stringify(chatMessages));
+      } else {
+        localStorage.removeItem('chatMessages');
+      }
+    }
+  }, [chatMessages, isHydrated]);
 
   const value = {
     analysisSummary,

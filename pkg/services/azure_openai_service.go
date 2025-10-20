@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
+	config "hunt-chat-api/configs"
 	"hunt-chat-api/pkg/azure"
 	"hunt-chat-api/pkg/models"
 )
@@ -238,8 +240,54 @@ func (aos *AzureOpenAIService) CreateEmbedding(ctx context.Context, text string)
 
 // ProcessChatWithHistory は、過去のチャット履歴を活用してより良い回答を生成します。
 func (aos *AzureOpenAIService) ProcessChatWithHistory(chatMessage string, context string, relevantHistory []string) (string, error) {
-	// システムプロンプトを定義
-	systemPrompt := "あなたは、需要予測の専門家アシ-スタントです。過去の会話履歴から学習し、ユーザーの質問により的確に答えることができます。提供された分析コンテキストと過去の会話履歴を統合的に分析し、需要予測に関する質問に答えてください。"
+	// システムプロンプトをYAMLファイルから読み込み
+	promptConfig, err := config.LoadSystemPrompt()
+	if err != nil {
+		log.Printf("Warning: Failed to load system prompt from YAML, using fallback: %v", err)
+		// フォールバックとして簡易的なプロンプトを使用
+		systemPrompt := "あなたは、需要予測の専門家アシスタントです。過去の会話履歴から学習し、ユーザーの質問により的確に答えることができます。提供された分析コンテキストと過去の会話履歴を統合的に分析し、需要予測に関する質問に答えてください。"
+
+		// ユーザープロンプトを構築
+		userPrompt := fmt.Sprintf("以下の情報を考慮して、回答してください。\n\n## ユーザーからのメッセージ\n%s\n", chatMessage)
+
+		// 過去の関連する会話履歴を追加
+		if len(relevantHistory) > 0 {
+			userPrompt += "\n## 関連する過去の会話\n"
+			for i, history := range relevantHistory {
+				userPrompt += fmt.Sprintf("%d. %s\n", i+1, history)
+			}
+		}
+
+		// 現在のコンテキストを追加
+		if context != "" {
+			userPrompt += fmt.Sprintf("\n## 現在の分析コンテキスト\n%s\n", context)
+		}
+
+		messages := []ChatMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		}
+
+		// Azure OpenAI にリクエストを送信
+		resp, err := aos.CreateChatCompletion(messages, 2000, 0.7)
+		if err != nil {
+			return "", fmt.Errorf("AI処理中にエラーが発生しました: %w", err)
+		}
+
+		if len(resp.Choices) > 0 {
+			return resp.Choices[0].Message.Content, nil
+		}
+
+		return "", fmt.Errorf("AIから有効な回答が得られませんでした")
+	}
+
+	// 特殊コマンドのチェック（help, docsなど）
+	if isSpecial, specialResponse := promptConfig.CheckSpecialCommand(chatMessage); isSpecial {
+		return specialResponse, nil
+	}
+
+	// システムプロンプトを構築
+	systemPrompt := promptConfig.BuildSystemPrompt()
 
 	// ユーザープロンプトを構築
 	userPrompt := fmt.Sprintf("以下の情報を考慮して、回答してください。\n\n## ユーザーからのメッセージ\n%s\n", chatMessage)

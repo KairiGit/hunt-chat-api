@@ -40,7 +40,10 @@ export default function ChatPage() {
       const response = await fetch('/api/proxy/chat-input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_message: chatInput, context: analysisSummary }),
+        body: JSON.stringify({ 
+          chat_message: chatInput, 
+          context: analysisSummary || '' // 分析結果がなくても空文字列で送信
+        }),
       });
 
       if (!response.ok) {
@@ -114,37 +117,70 @@ export default function ChatPage() {
                 </div>
                 <div className="space-y-2">
                   <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-100">
-                    分析結果について質問してください
+                    {analysisSummary ? '分析結果について質問してください' : 'システムやデータについて質問してください'}
                   </h3>
                   <p className="text-sm text-purple-600 dark:text-purple-400 max-w-md">
-                    アップロードしたファイルの分析結果や、過去のデータについてAIに質問できます
+                    {analysisSummary 
+                      ? 'アップロードしたファイルの分析結果や、過去のデータについてAIに質問できます'
+                      : 'システムの使い方、機能、設計について質問したり、データ分析について相談できます'}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 justify-center">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setChatInput('このデータの傾向を教えて')}
-                    className="border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30"
-                  >
-                    💡 データの傾向を知る
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setChatInput('異常値について詳しく教えて')}
-                    className="border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30"
-                  >
-                    🔍 異常値を調べる
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setChatInput('相関関係を教えて')}
-                    className="border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30"
-                  >
-                    📊 相関を分析
-                  </Button>
+                  {analysisSummary ? (
+                    <>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setChatInput('このデータの傾向を教えて')}
+                        className="border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                      >
+                        💡 データの傾向を知る
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setChatInput('異常値について詳しく教えて')}
+                        className="border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                      >
+                        🔍 異常値を調べる
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setChatInput('相関関係を教えて')}
+                        className="border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                      >
+                        📊 相関を分析
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setChatInput('このシステムの機能を教えて')}
+                        className="border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                      >
+                        🏭 システム機能
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setChatInput('需要予測の仕組みを教えて')}
+                        className="border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                      >
+                        🔮 予測の仕組み
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setChatInput('APIの使い方を教えて')}
+                        className="border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                      >
+                        📖 API利用方法
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
@@ -187,15 +223,15 @@ export default function ChatPage() {
               placeholder={
                 analysisSummary 
                   ? '分析結果について質問... (例: このデータの傾向を教えて)' 
-                  : '先にファイルを分析してください'
+                  : 'システムについて質問... (例: このシステムの機能を教えて)'
               }
-              disabled={!analysisSummary}
+              disabled={false}
               className="flex-1 resize-none"
               rows={1}
             />
             <Button 
               type="submit" 
-              disabled={!chatInput.trim() || chatLoading || !analysisSummary}
+              disabled={!chatInput.trim() || chatLoading}
               className="bg-purple-500 hover:bg-purple-600 text-white"
             >
               送信

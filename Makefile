@@ -56,6 +56,10 @@ deploy:
 azure-init:
 	azd init
 
+# Initialize system documentation in vector DB
+init-docs:
+	go run scripts/init_system_docs.go
+
 # Azure login
 azure-login:
 	az login
