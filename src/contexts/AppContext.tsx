@@ -5,11 +5,19 @@ import type { AnomalyDetection } from '@/types/analysis';
 
 export type MessageType = 'normal' | 'anomaly-question';
 
+export interface ContextSource {
+  type: string;
+  file_name: string;
+  score: number;
+  date?: string;
+}
+
 export interface ChatMessage {
   sender: 'user' | 'ai';
   text: string;
   type?: MessageType;
   anomalyData?: AnomalyDetection;
+  contextSources?: ContextSource[]; // 検索ソース情報
 }
 
 // Contextで共有する値の型定義

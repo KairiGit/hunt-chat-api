@@ -604,11 +604,15 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 	// RAG: 類似した過去の会話を検索（チャット履歴から）
 	var ragContext strings.Builder
 	var relevantHistoryTexts []string
-	var contextSources []string
+	var contextSources []models.ContextSource // スコア情報付きのソースリスト
 
 	if req.Context != "" {
 		ragContext.WriteString(req.Context) // ファイル分析のコンテキストを維持
-		contextSources = append(contextSources, "現在のファイル分析")
+		contextSources = append(contextSources, models.ContextSource{
+			Type:     "file_analysis",
+			FileName: "アップロードファイル",
+			Score:    1.0, // 明示的に提供されたコンテキストは最高スコア
+		})
 	}
 
 	// 🔍 過去のチャット履歴から関連する会話を検索
@@ -621,7 +625,12 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 			historyText := fmt.Sprintf("[%s] %s: %s", entry.Timestamp, entry.Role, entry.Message)
 			relevantHistoryTexts = append(relevantHistoryTexts, historyText)
 			ragContext.WriteString(fmt.Sprintf("%d. %s (関連度: %.2f)\n", i+1, historyText, entry.Metadata.RelevanceScore))
-			contextSources = append(contextSources, fmt.Sprintf("過去の会話 (%s)", entry.Timestamp))
+			contextSources = append(contextSources, models.ContextSource{
+				Type:     "chat_history",
+				FileName: fmt.Sprintf("会話 %s", entry.Timestamp),
+				Score:    float32(entry.Metadata.RelevanceScore),
+				Date:     entry.Timestamp,
+			})
 		}
 		log.Printf("📚 %d件の関連する過去の会話を取得しました", len(chatHistory))
 	}
@@ -636,7 +645,20 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 			if textPayload, ok := point.Payload["text"]; ok {
 				if text, ok := textPayload.GetKind().(*qdrant.Value_StringValue); ok {
 					ragContext.WriteString(fmt.Sprintf("- %s (類似度: %.2f)\n", text.StringValue, point.Score))
-					contextSources = append(contextSources, "ナレッジベース")
+					
+					// ファイル名を取得（メタデータから）
+					fileName := "ドキュメント"
+					if fileNamePayload, ok := point.Payload["file_name"]; ok {
+						if fileNameVal, ok := fileNamePayload.GetKind().(*qdrant.Value_StringValue); ok {
+							fileName = fileNameVal.StringValue
+						}
+					}
+					
+					contextSources = append(contextSources, models.ContextSource{
+						Type:     "document",
+						FileName: fileName,
+						Score:    point.Score,
+					})
 				}
 			}
 		}
@@ -672,7 +694,12 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 							if report.Regression != nil {
 								ragContext.WriteString(fmt.Sprintf("- 回帰分析: %s\n", report.Regression.Description))
 							}
-							contextSources = append(contextSources, fmt.Sprintf("分析レポート (%s)", report.FileName))
+							contextSources = append(contextSources, models.ContextSource{
+								Type:     "analysis_report",
+								FileName: report.FileName,
+								Score:    point.Score,
+								Date:     report.AnalysisDate,
+							})
 						}
 					}
 				}

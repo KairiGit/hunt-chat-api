@@ -10,15 +10,23 @@ type ChatRequest struct {
 	UserID    string `json:"user_id,omitempty"`    // ユーザーIDで履歴を管理
 }
 
+// ContextSource コンテキストソースの情報（スコア付き）
+type ContextSource struct {
+	Type     string  `json:"type"`      // "chat_history", "document", "analysis_report", "file_analysis"
+	FileName string  `json:"file_name"` // ファイル名やドキュメント名
+	Score    float32 `json:"score"`     // 類似度スコア (0.0-1.0)
+	Date     string  `json:"date,omitempty"` // 日付（チャット履歴や分析レポートの場合）
+}
+
 // ChatResponse represents the response from the chat API
 type ChatResponse struct {
-	Response          string   `json:"response"`
-	Timestamp         string   `json:"timestamp"`
-	Model             string   `json:"model"`
-	SessionID         string   `json:"session_id,omitempty"`
-	RelevantHistory   []string `json:"relevant_history,omitempty"`   // 関連する過去の会話
-	ContextSources    []string `json:"context_sources,omitempty"`    // コンテキストのソース情報
-	ConversationCount int      `json:"conversation_count,omitempty"` // 使用した過去の会話数
+	Response          string          `json:"response"`
+	Timestamp         string          `json:"timestamp"`
+	Model             string          `json:"model"`
+	SessionID         string          `json:"session_id,omitempty"`
+	RelevantHistory   []string        `json:"relevant_history,omitempty"`   // 関連する過去の会話
+	ContextSources    []ContextSource `json:"context_sources,omitempty"`    // コンテキストのソース情報（スコア付き）
+	ConversationCount int             `json:"conversation_count,omitempty"` // 使用した過去の会話数
 }
 
 // ChatHistoryEntry チャット履歴の1エントリー

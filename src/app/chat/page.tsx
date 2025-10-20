@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
-import { Bot, User, MessageSquare } from 'lucide-react';
-import { useAppContext, type ChatMessage } from '@/contexts/AppContext';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Bot, User, MessageSquare, Info } from 'lucide-react';
+import { useAppContext, type ChatMessage, type ContextSource } from '@/contexts/AppContext';
 
 export default function ChatPage() {
   const { analysisSummary, chatMessages, setChatMessages } = useAppContext();
@@ -31,7 +32,7 @@ export default function ChatPage() {
     if (!chatInput.trim() || chatLoading) return;
 
     const userMessage: ChatMessage = { sender: 'user', text: chatInput };
-    const aiEmptyMessage: ChatMessage = { sender: 'ai', text: '' };
+    const aiEmptyMessage: ChatMessage = { sender: 'ai', text: '', contextSources: [] };
     setChatMessages((prev) => [...prev, userMessage, aiEmptyMessage]);
     setChatLoading(true);
     setChatInput('');
@@ -51,22 +52,23 @@ export default function ChatPage() {
         throw new Error(errData.error);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('Failed to get response reader');
+      // まず完全なJSONレスポンスを取得
+      const data = await response.json();
+      const aiText = data.response?.text || '';
+      const contextSources: ContextSource[] = data.response?.context_sources || [];
       
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        setChatMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last && last.sender === 'ai') {
-            return [...prev.slice(0, -1), { ...last, text: last.text + chunk }];
-          }
-          return prev;
-        });
-      }
+      // AIメッセージを更新
+      setChatMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.sender === 'ai') {
+          return [...prev.slice(0, -1), { 
+            ...last, 
+            text: aiText,
+            contextSources: contextSources
+          }];
+        }
+        return prev;
+      });
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred';
       setChatMessages((prev) => {
@@ -197,7 +199,39 @@ export default function ChatPage() {
                         ? 'bg-blue-500 text-white ml-auto' 
                         : 'bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/30 dark:to-indigo-900/30 text-purple-900 dark:text-purple-100 border border-purple-200 dark:border-purple-800'
                     }`}>
-                      <p className="whitespace-pre-wrap text-sm">{msg.text}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="whitespace-pre-wrap text-sm flex-1">{msg.text}</p>
+                        {msg.sender === 'ai' && msg.contextSources && msg.contextSources.length > 0 && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button className="flex-shrink-0 text-purple-400 hover:text-purple-600 transition-colors">
+                                  <Info className="h-4 w-4" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <div className="space-y-1">
+                                  <p className="font-semibold text-xs mb-2">📚 参照元ソース</p>
+                                  {msg.contextSources.map((source, i) => (
+                                    <div key={i} className="text-xs">
+                                      <span className="font-medium">
+                                        {source.type === 'chat_history' && '💬 '}
+                                        {source.type === 'document' && '📄 '}
+                                        {source.type === 'analysis_report' && '📊 '}
+                                        {source.type === 'file_analysis' && '📁 '}
+                                        {source.file_name}
+                                      </span>
+                                      <span className="text-muted-foreground ml-2">
+                                        ({Math.round(source.score * 100)}%)
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
