@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Markdown } from "@/components/ui/markdown"
 import { Bot, User, MessageSquare, Info, Plus, X, Edit2, Check } from 'lucide-react';
 import { useAppContext, type ChatMessage, type ContextSource, type ChatThread } from '@/contexts/AppContext';
 
@@ -319,13 +320,19 @@ export default function ChatPage() {
                         {msg.sender === 'user' ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
                       </AvatarFallback>
                     </Avatar>
-                    <div className={`rounded-lg px-4 py-2 max-w-[80%] ${
+                    <div className={`rounded-lg px-4 py-3 max-w-[80%] ${
                       msg.sender === 'user' 
                         ? 'bg-blue-500 text-white ml-auto' 
                         : 'bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/30 dark:to-indigo-900/30 text-purple-900 dark:text-purple-100 border border-purple-200 dark:border-purple-800'
                     }`}>
                       <div className="flex items-start justify-between gap-2">
-                        <p className="whitespace-pre-wrap text-sm flex-1">{msg.text}</p>
+                        {msg.sender === 'user' ? (
+                          <p className="whitespace-pre-wrap text-sm flex-1">{msg.text}</p>
+                        ) : (
+                          <div className="flex-1 text-sm">
+                            <Markdown>{msg.text}</Markdown>
+                          </div>
+                        )}
                         {msg.sender === 'ai' && msg.contextSources && msg.contextSources.length > 0 && (
                           <TooltipProvider>
                             <Tooltip>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
+import { Markdown } from "@/components/ui/markdown"
 import { AlertCircle, Bot, User } from 'lucide-react';
 import { useAppContext, type ChatMessage } from '@/contexts/AppContext';
 import type { AnomalyDetection } from '@/types/analysis';
@@ -239,12 +240,18 @@ export default function AnomalyResponsePage() {
                       {msg.sender === 'user' ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
                     </AvatarFallback>
                   </Avatar>
-                  <div className={`rounded-lg px-4 py-2 max-w-[80%] ${
+                  <div className={`rounded-lg px-4 py-3 max-w-[80%] ${
                     msg.sender === 'user' 
                       ? 'bg-blue-500 text-white ml-auto' 
                       : 'bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30 text-amber-900 dark:text-amber-100 border border-amber-200 dark:border-amber-800'
                   }`}>
-                    <p className="whitespace-pre-wrap text-sm">{msg.text}</p>
+                    {msg.sender === 'user' ? (
+                      <p className="whitespace-pre-wrap text-sm">{msg.text}</p>
+                    ) : (
+                      <div className="text-sm">
+                        <Markdown>{msg.text}</Markdown>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
