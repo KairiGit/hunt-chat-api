@@ -161,9 +161,8 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="container mx-auto p-4 max-w-4xl">
-      <Card className="h-[calc(100vh-120px)] flex flex-col">
-        <CardHeader className="flex-shrink-0 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-b pb-2">
+    <Card className="h-[calc(100vh-2rem)] flex flex-col">
+      <CardHeader className="flex-shrink-0 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-b pb-2">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-purple-500 rounded-lg">
@@ -405,6 +404,5 @@ export default function ChatPage() {
           </form>
         </CardFooter>
       </Card>
-    </div>
   );
 }

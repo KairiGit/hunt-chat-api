@@ -58,9 +58,9 @@ export default function RootLayout({
                     <span className="mr-2">📊</span>
                     ダッシュボード
                   </Link>
-                  <Link href="/weekly-analysis" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
-                    <span className="mr-2">📆</span>
-                    週次分析
+                  <Link href="/product-analysis" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
+                    <span className="mr-2">�</span>
+                    製品別分析
                   </Link>
                   <Link href="/analysis" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
                     <span className="mr-2">📁</span>
@@ -109,7 +109,7 @@ export default function RootLayout({
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 p-8">
+            <main className="flex-1 p-4">
               {children}
             </main>
           </div>

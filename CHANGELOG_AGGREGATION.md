@@ -77,7 +77,7 @@
 日次・週次・月次の3つの粒度でデータを集約して分析できる機能を追加しました。
 
 **✅ 実装済み:**
-1. **週次分析ページ** - 統計分析での粒度選択
+1. **製品別分析ページ** - 統計分析での粒度選択
 2. **ファイル分析ページ** - ファイルアップロード時の粒度選択 🆕
 
 ---
@@ -295,7 +295,7 @@ func (s *StatisticsService) AnalyzeWeeklySales(
 
 ### フロントエンド
 
-#### 1. **src/app/weekly-analysis/page.tsx**
+#### 1. **src/app/product-analysis/page.tsx** (旧: weekly-analysis)
 
 **新規State:**
 ```typescript

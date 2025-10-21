@@ -217,9 +217,8 @@ export default function AnomalyResponsePage() {
   };
 
   return (
-    <div className="container mx-auto p-4 max-w-4xl">
-      <Card className="h-[calc(100vh-120px)] flex flex-col">
-        <CardHeader className="flex-shrink-0 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-b">
+    <Card className="h-[calc(100vh-2rem)] flex flex-col">
+      <CardHeader className="flex-shrink-0 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-b">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-amber-500 rounded-lg">
               <AlertCircle className="h-6 w-6 text-white" />
@@ -321,6 +320,5 @@ export default function AnomalyResponsePage() {
           </form>
         </CardFooter>
       </Card>
-    </div>
   );
 }

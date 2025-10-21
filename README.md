@@ -466,7 +466,7 @@ npm test
 | [UML.md](./UML.md) | **UML図・シーケンス図・アーキテクチャ図** 🆕 |
 | [RAG_SYSTEM_GUIDE.md](./RAG_SYSTEM_GUIDE.md) | RAGシステムガイド |
 | [AI_LEARNING_GUIDE.md](./AI_LEARNING_GUIDE.md) | AI学習機能ガイド |
-| [WEEKLY_ANALYSIS_GUIDE.md](./WEEKLY_ANALYSIS_GUIDE.md) | 週次分析ガイド |
+| [WEEKLY_ANALYSIS_GUIDE.md](./WEEKLY_ANALYSIS_GUIDE.md) | 製品別分析ガイド（旧：週次分析） |
 | [DATA_AGGREGATION_GUIDE.md](./DATA_AGGREGATION_GUIDE.md) | データ集約分析ガイド（日次・週次・月次） |
 | [ANOMALY_DETECTION_WEEKLY_AGGREGATION.md](./ANOMALY_DETECTION_WEEKLY_AGGREGATION.md) | 異常検知の週次集約対応 |
 | [ANOMALY_DISPLAY_IMPROVEMENT.md](./ANOMALY_DISPLAY_IMPROVEMENT.md) | 異常検知の表示改善（製品名・日付フォーマット） |

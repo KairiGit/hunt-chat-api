@@ -50,7 +50,7 @@ interface WeeklyAnalysis {
   recommendations: string[];
 }
 
-export default function WeeklyAnalysisPage() {
+export default function ProductAnalysisPage() {
   const [analysis, setAnalysis] = useState<WeeklyAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -82,7 +82,7 @@ export default function WeeklyAnalysisPage() {
       });
 
       if (!response.ok) {
-        throw new Error('週次分析に失敗しました');
+        throw new Error('製品別分析に失敗しました');
       }
 
       const result = await response.json();
@@ -120,10 +120,10 @@ export default function WeeklyAnalysisPage() {
         {/* ヘッダー */}
         <div>
           <h1 className="text-4xl font-bold text-gray-800 mb-2">
-            📊 {granularity === 'daily' ? '日次' : granularity === 'monthly' ? '月次' : '週次'}売上分析
+            📊 製品別売上分析
           </h1>
           <p className="text-gray-600">
-            製造業に最適化された{granularity === 'daily' ? '日別' : granularity === 'monthly' ? '月別' : '週別'}での販売実績分析
+            特定の製品について、{granularity === 'daily' ? '日別' : granularity === 'monthly' ? '月別' : '週別'}での販売実績を詳細に分析
           </p>
         </div>
 
@@ -131,7 +131,7 @@ export default function WeeklyAnalysisPage() {
         <Card>
           <CardHeader>
             <CardTitle>分析条件</CardTitle>
-            <CardDescription>製品と期間を選択して週次分析を実行します</CardDescription>
+            <CardDescription>製品と期間、粒度を選択して分析を実行します</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">

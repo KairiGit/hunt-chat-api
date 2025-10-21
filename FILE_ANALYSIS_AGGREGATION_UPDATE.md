@@ -307,7 +307,7 @@ const handleGranularityChange = (newGranularity) => {
 ## 📚 関連ドキュメント
 
 - [DATA_AGGREGATION_GUIDE.md](./DATA_AGGREGATION_GUIDE.md) - データ集約の完全ガイド
-- [WEEKLY_ANALYSIS_GUIDE.md](./WEEKLY_ANALYSIS_GUIDE.md) - 週次分析の詳細
+- [WEEKLY_ANALYSIS_GUIDE.md](./WEEKLY_ANALYSIS_GUIDE.md) - 製品別分析の詳細（旧：週次分析）
 - [FILE_FORMAT_GUIDE.md](./FILE_FORMAT_GUIDE.md) - ファイル形式ガイド
 - [CHANGELOG_AGGREGATION.md](./CHANGELOG_AGGREGATION.md) - 変更履歴
 
