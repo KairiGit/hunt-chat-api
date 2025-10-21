@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAppContext } from '@/contexts/AppContext';
 import { AnalysisReportView } from '@/components/analysis/AnalysisReportView';
+import { AnalysisProgressBar } from '@/components/analysis/AnalysisProgressBar';
 import type { AnalysisReport, AnalysisResponse, AnalysisReportHeader } from '@/types/analysis';
 import { useToast } from '@/components/ui/use-toast';
 import {
@@ -223,6 +224,20 @@ export default function AnalysisPage() {
         if (result.analysis_report) {
           setSelectedReport(result.analysis_report);
           fetchReportList();
+          
+          // 非同期処理のステータスを表示
+          if (result.ai_insights_pending) {
+            toast({
+              title: "🤖 AI分析実行中",
+              description: "AI洞察の生成をバックグラウンドで実行中です。完了まで2-5秒かかります。",
+            });
+          }
+          if (result.ai_questions_pending) {
+            toast({
+              title: "💬 AI質問生成中",
+              description: "異常検知のAI質問をバックグラウンドで生成中です。完了まで5-10秒かかります。",
+            });
+          }
         } else {
           const warningMessage = result.error 
             ? `詳細レポートの生成に失敗しました。${result.error}`
@@ -243,55 +258,121 @@ export default function AnalysisPage() {
     <div className="space-y-8">
       <h1 className="text-2xl font-bold">ファイル分析</h1>
       
-      <Card className="max-w-2xl">
-        <CardHeader>
-          <CardTitle>① ファイルのアップロード</CardTitle>
-          <CardDescription>分析したい販売実績データ（.xlsx, .csv）を選択してください。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="grid w-full items-center gap-1.5">
-              <Label htmlFor="granularity">データ集約粒度</Label>
-              <select
-                id="granularity"
-                value={granularity}
-                onChange={(e) => handleGranularityChange(e.target.value as 'daily' | 'weekly' | 'monthly')}
-                className="w-full p-2 border rounded-lg"
-                disabled={isLoading}
-              >
-                <option value="daily">📅 日次（詳細分析・短期トレンド）</option>
-                <option value="weekly">📆 週次（推奨・中期トレンド）</option>
-                <option value="monthly">📊 月次（長期トレンド・高速処理）</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                {granularity === 'daily' && '⚡ 処理時間: やや遅い | 📊 詳細度: 高 | 💡 用途: 短期分析（1週間〜1ヶ月）'}
-                {granularity === 'weekly' && '⚡ 処理時間: 普通 | 📊 詳細度: 中 | 💡 用途: 中期分析（1ヶ月〜6ヶ月）⭐'}
-                {granularity === 'monthly' && '⚡ 処理時間: 高速 | 📊 詳細度: 低 | 💡 用途: 長期分析（6ヶ月以上）'}
-              </p>
-            </div>
-            
-            <div className="grid w-full items-center gap-1.5">
-              <Label htmlFor="file-upload">ファイル</Label>
-              <Input id="file-upload" type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx, .csv" />
-            </div>
-          </div>
-        </CardContent>
-        <CardFooter className="flex justify-end">
-          <Button onClick={handleFileAnalysis} disabled={!selectedFile || isLoading}>
-            {isLoading ? '分析中...' : '分析開始'}
-          </Button>
-        </CardFooter>
-      </Card>
-
-      {error && (
-        <Card className="max-w-2xl bg-destructive/10 border-destructive">
+      {/* ファイルアップロードと進捗バーを横並び */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 左側: ファイルアップロード */}
+        <Card>
           <CardHeader>
-            <CardTitle className="text-destructive">分析エラー</CardTitle>
+            <CardTitle>① ファイルのアップロード</CardTitle>
+            <CardDescription>分析したい販売実績データ（.xlsx, .csv）を選択してください。</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-destructive-foreground">{error}</p>
+            <div className="space-y-4">
+              <div className="grid w-full items-center gap-1.5">
+                <Label htmlFor="granularity">データ集約粒度</Label>
+                <select
+                  id="granularity"
+                  value={granularity}
+                  onChange={(e) => handleGranularityChange(e.target.value as 'daily' | 'weekly' | 'monthly')}
+                  className="w-full p-2 border rounded-lg"
+                  disabled={isLoading}
+                >
+                  <option value="daily">📅 日次（詳細分析・短期トレンド）</option>
+                  <option value="weekly">📆 週次（推奨・中期トレンド）</option>
+                  <option value="monthly">📊 月次（長期トレンド・高速処理）</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {granularity === 'daily' && '⚡ 処理時間: やや遅い | 📊 詳細度: 高 | 💡 用途: 短期分析（1週間〜1ヶ月）'}
+                  {granularity === 'weekly' && '⚡ 処理時間: 普通 | 📊 詳細度: 中 | 💡 用途: 中期分析（1ヶ月〜6ヶ月）⭐'}
+                  {granularity === 'monthly' && '⚡ 処理時間: 高速 | 📊 詳細度: 低 | 💡 用途: 長期分析（6ヶ月以上）'}
+                </p>
+              </div>
+              
+              <div className="grid w-full items-center gap-1.5">
+                <Label htmlFor="file-upload">ファイル</Label>
+                <Input id="file-upload" type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx, .csv" />
+              </div>
+            </div>
           </CardContent>
+          <CardFooter className="flex justify-end">
+            <Button onClick={handleFileAnalysis} disabled={!selectedFile || isLoading}>
+              {isLoading ? '分析中...' : '分析開始'}
+            </Button>
+          </CardFooter>
         </Card>
+
+        {/* 右側: 進捗バーまたはプレースホルダー */}
+        <div className="min-h-[400px]">
+          {isLoading ? (
+            <AnalysisProgressBar isAnalyzing={isLoading} />
+          ) : (
+            <Card className="h-full border-dashed border-2 border-gray-300 dark:border-gray-700">
+              <CardContent className="flex flex-col items-center justify-center h-full p-8 text-center">
+                <div className="space-y-4">
+                  <div className="text-6xl">📊</div>
+                  <div className="space-y-2">
+                    <p className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+                      分析の進捗をここに表示
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      ファイルを選択して「分析開始」をクリックすると、<br />
+                      リアルタイムで処理の進行状況が表示されます
+                    </p>
+                  </div>
+                  <div className="pt-4 space-y-2 text-xs text-left text-gray-600 dark:text-gray-400">
+                    <div className="flex items-center gap-2">
+                      <span>📁</span>
+                      <span>ファイル読み込み</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>🔍</span>
+                      <span>CSV解析</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>📊</span>
+                      <span>統計分析</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>🤖</span>
+                      <span>AI分析</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>異常検知</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* エラーと警告メッセージ */}
+      {(error || warning) && (
+        <div className="space-y-4">
+          {error && (
+            <Card className="bg-destructive/10 border-destructive">
+              <CardHeader>
+                <CardTitle className="text-destructive">分析エラー</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-destructive-foreground">{error}</p>
+              </CardContent>
+            </Card>
+          )}
+          
+          {warning && (
+            <Card className="bg-yellow-50 dark:bg-yellow-950 border-yellow-500">
+              <CardHeader>
+                <CardTitle className="text-yellow-700 dark:text-yellow-400">⚠️ 警告</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300">{warning}</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* レポート一覧 */}
@@ -355,17 +436,6 @@ export default function AnalysisPage() {
           </Card>
         )}
       </div>
-
-      {warning && (
-        <Card className="max-w-2xl bg-yellow-50 dark:bg-yellow-950 border-yellow-500">
-          <CardHeader>
-            <CardTitle className="text-yellow-700 dark:text-yellow-400">⚠️ 警告</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-yellow-700 dark:text-yellow-300">{warning}</p>
-          </CardContent>
-        </Card>
-      )}
 
       {/* 詳細分析レポート表示 */}
       {isLoadingReport && <p>レポート詳細を読み込み中...</p>}

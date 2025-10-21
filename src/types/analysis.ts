@@ -50,6 +50,9 @@ export interface AnalysisResponse {
   success: boolean;
   summary: string;
   error?: string; // エラーメッセージを追加
+  ai_insights_pending?: boolean; // 🆕 AI分析実行中フラグ
+  ai_questions_pending?: boolean; // 🆕 AI質問生成中フラグ
+  backend_version?: string; // 🆕 バックエンドバージョン
   sales_data_count?: number; // デバッグ用
   debug?: { // 🔍 デバッグ情報を追加
     header: string[];

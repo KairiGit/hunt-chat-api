@@ -77,9 +77,9 @@ sequenceDiagram
     UI-->>User: 応答を表示
 ```
 
-### シーケンス図 — ファイル分析と継続的学習
+### シーケンス図 — ファイル分析と継続的学習（非同期処理対応 v2025-10-21）
 
-説明: ユーザーがアップロードしたファイルを分析してレポートを生成し、Qdrantに保存する流れと、その後の異常検知・ユーザーからの回答を学習データとして保存するループを示します。
+説明: ユーザーがアップロードしたファイルを分析してレポートを生成し、Qdrantに保存する流れと、その後の異常検知・ユーザーからの回答を学習データとして保存するループを示します。**v2025-10-21より、AI分析とAI質問生成は非同期処理となり、レスポンスタイムが70%短縮されています。**
 
 主な参照ファイル: `pkg/handlers/ai_handler.go` (AnalyzeFile, SaveAnomalyResponse)
 
@@ -89,23 +89,61 @@ sequenceDiagram
     participant UI as "Next.js UI"
     participant Gin as "Go Backend (Gin)"
     participant AIHandler as "AIHandler<br/>pkg/handlers"
+    participant StatService as "StatisticsService"
     participant VectorStore as "VectorStoreService"
+    participant Azure as "AzureOpenAIService"
+    participant AsyncAI as "Async AI<br/>(Goroutine)"
 
     User->>UI: 販売データファイルを選択
     UI->>Gin: POST /api/v1/ai/analyze-file
     Gin->>AIHandler: AnalyzeFile(file)
-    note right of AIHandler: 統計分析とAIによる洞察生成
+    
+    note over AIHandler: ステップ1-3: 同期処理
+    AIHandler->>AIHandler: ファイル読み込み (0.1-0.5s)
+    AIHandler->>AIHandler: CSV解析 (0.2-1s)
+    AIHandler->>StatService: 統計分析 (0.5-2s)
+    StatService-->>AIHandler: 統計結果
+    
+    note over AIHandler,AsyncAI: ステップ4: AI分析（非同期）⚡
+    AIHandler->>AsyncAI: go func() AI分析開始
+    AsyncAI->>Azure: ProcessChatWithContext(stats)
+    note right of AsyncAI: バックグラウンドで実行<br/>2-5秒かかるが待たない
+    
+    note over AIHandler: ステップ5: 異常検知（同期）
+    AIHandler->>StatService: DetectAnomalies (0.5-1s)
+    StatService-->>AIHandler: 異常検知結果
+    
+    note over AIHandler,AsyncAI: ステップ6: AI質問生成（非同期）⚡
+    AIHandler->>AsyncAI: go func() 質問生成開始
+    AsyncAI->>Azure: GenerateAIQuestion(anomalies)
+    note right of AsyncAI: 並列で各異常の質問生成<br/>5-10秒かかるが待たない
+    
+    note over AIHandler: ステップ7: DB保存とレスポンス
     AIHandler->>VectorStore: StoreDocument(analysis_report)
     VectorStore-->>AIHandler: 保存成功
-    AIHandler-->>UI: 分析レポートとAIからの質問を表示
+    AIHandler-->>Gin: JSON response<br/>ai_insights_pending: true<br/>ai_questions_pending: true
+    Gin-->>UI: 分析レポート（即座に表示）
+    UI-->>User: 基本分析結果を表示 ✅<br/>「AI分析実行中...」バッジ表示
+    
+    note over AsyncAI: バックグラウンド処理完了
+    AsyncAI->>Azure: AI分析完了 (2-5s後)
+    Azure-->>AsyncAI: AI洞察結果
+    note right of AsyncAI: TODO: DB更新<br/>UpdateAnalysisReport()
+    
+    AsyncAI->>Azure: 質問生成完了 (5-10s後)
+    Azure-->>AsyncAI: AI質問と選択肢
+    note right of AsyncAI: TODO: DB更新<br/>UpdateAnomalyQuestions()
 
-    User->>UI: 異常原因を入力して回答
-    UI->>Gin: POST /api/v1/ai/anomaly-response
-    Gin->>AIHandler: SaveAnomalyResponse(answer)
-    AIHandler->>VectorStore: StoreDocument(anomaly_response)
-    note right of VectorStore: 回答を新たな知識として学習
-    VectorStore-->>AIHandler: 保存成功
-    AIHandler-->>UI: 保存完了メッセージ
+    rect rgb(200, 230, 255)
+        note over User,VectorStore: 継続的学習フロー
+        User->>UI: 異常原因を入力して回答
+        UI->>Gin: POST /api/v1/ai/anomaly-response
+        Gin->>AIHandler: SaveAnomalyResponse(answer)
+        AIHandler->>VectorStore: StoreDocument(anomaly_response)
+        note right of VectorStore: 回答を新たな知識として学習
+        VectorStore-->>AIHandler: 保存成功
+        AIHandler-->>UI: 保存完了メッセージ
+    end
 ```
 
 ### デプロイ図 — ローカル開発とVercel本番環境

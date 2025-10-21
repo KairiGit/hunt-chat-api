@@ -729,7 +729,7 @@ func (s *StatisticsService) aggregateDataForAnomalyDetection(sales []float64, da
 
 	for _, periodKey := range periodOrder {
 		values := periodMap[periodKey]
-		
+
 		// 合計を計算
 		var total float64
 		for _, v := range values {
@@ -757,8 +757,9 @@ func (s *StatisticsService) calculateSeverity(absZScore float64) string {
 
 // formatDateForDisplay 日付を読みやすい形式にフォーマット
 // 例: "2022-04" → "2022年4月"
-//     "2022-W10" → "2022年 第10週"
-//     "2022-03-07" → "2022年3月7日"
+//
+//	"2022-W10" → "2022年 第10週"
+//	"2022-03-07" → "2022年3月7日"
 func (s *StatisticsService) formatDateForDisplay(date string) string {
 	// 月次形式: YYYY-MM
 	if len(date) == 7 && date[4] == '-' {
@@ -767,7 +768,7 @@ func (s *StatisticsService) formatDateForDisplay(date string) string {
 			return t.Format("2006年1月")
 		}
 	}
-	
+
 	// 週次形式: YYYY-WWW
 	if len(date) >= 7 && strings.Contains(date, "-W") {
 		parts := strings.Split(date, "-W")
@@ -775,7 +776,7 @@ func (s *StatisticsService) formatDateForDisplay(date string) string {
 			return fmt.Sprintf("%s年 第%s週", parts[0], parts[1])
 		}
 	}
-	
+
 	// 日次形式: YYYY-MM-DD
 	if len(date) == 10 {
 		t, err := time.Parse("2006-01-02", date)
@@ -783,7 +784,7 @@ func (s *StatisticsService) formatDateForDisplay(date string) string {
 			return t.Format("2006年1月2日")
 		}
 	}
-	
+
 	// パースできない場合はそのまま返す
 	return date
 }
@@ -795,16 +796,16 @@ func (s *StatisticsService) GenerateAIQuestion(anomaly models.AnomalyDetection) 
 	if displayName == "" {
 		displayName = anomaly.ProductID
 	}
-	
+
 	// 日付を読みやすい形式にフォーマット
 	formattedDate := s.formatDateForDisplay(anomaly.Date)
-	
+
 	// AIサービスが利用可能な場合は、AIに質問と選択肢を生成させる
 	if s.azureOpenAIService != nil {
 		// AnomalyDetectionをAnomalyに変換（必要なフィールドのみ）
 		anomalyForAI := models.Anomaly{
 			Date:        formattedDate, // フォーマット済みの日付を使用
-			ProductID:   displayName,    // 表示名を使用
+			ProductID:   displayName,   // 表示名を使用
 			Description: fmt.Sprintf("売上%s (実績: %.0f, 期待値: %.0f)", anomaly.AnomalyType, anomaly.ActualValue, anomaly.ExpectedValue),
 		}
 
