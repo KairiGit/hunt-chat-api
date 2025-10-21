@@ -176,6 +176,7 @@ type AnalysisReportHeader struct {
 type WeatherSalesData struct {
 	Date        string  `json:"date"`
 	ProductID   string  `json:"product_id"`
+	ProductName string  `json:"product_name,omitempty"` // 製品名（表示用）
 	Sales       float64 `json:"sales"`
 	Temperature float64 `json:"temperature"`
 	Humidity    float64 `json:"humidity"`
@@ -201,7 +202,8 @@ type ConfidenceInterval struct {
 // AnomalyDetection represents a detected anomaly in the data
 type AnomalyDetection struct {
 	Date            string   `json:"date"`
-	ProductID       string   `json:"product_id,omitempty"` // 追加
+	ProductID       string   `json:"product_id,omitempty"`   // 製品ID（内部識別用）
+	ProductName     string   `json:"product_name,omitempty"` // 製品名（表示用）
 	ActualValue     float64  `json:"actual_value"`
 	ExpectedValue   float64  `json:"expected_value"`
 	Deviation       float64  `json:"deviation"`             // Absolute deviation from expected

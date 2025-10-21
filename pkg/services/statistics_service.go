@@ -583,12 +583,17 @@ func (s *StatisticsService) PredictFutureSales(
 }
 
 // DetectAnomalies 売上データから異常値を検出する（移動平均乖離率法）
-func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, productID string) []models.AnomalyDetection {
+func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, productID string, productName string) []models.AnomalyDetection {
 	windowSize := 30           // 30日間の移動平均
 	percentageThreshold := 0.5 // 50%の乖離
 
+	displayName := productName
+	if displayName == "" {
+		displayName = productID // 製品名がない場合はIDを使用
+	}
+
 	if len(sales) < windowSize {
-		log.Printf("[異常検知@%s] データが少なく、移動平均を計算できません（%d件 < %d件）", productID, len(sales), windowSize)
+		log.Printf("[異常検知@%s] データが少なく、移動平均を計算できません（%d件 < %d件）", displayName, len(sales), windowSize)
 		return []models.AnomalyDetection{}
 	}
 
@@ -626,6 +631,7 @@ func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, pro
 			anomalies = append(anomalies, models.AnomalyDetection{
 				Date:          dates[i],
 				ProductID:     productID,
+				ProductName:   productName,
 				ActualValue:   currentValue,
 				ExpectedValue: mean, // 期待値として移動平均を使用
 				Deviation:     math.Abs(deviation),
@@ -636,7 +642,7 @@ func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, pro
 		}
 	}
 
-	log.Printf("[異常検知@%s] 移動平均法により %d 件の異常を検出しました", productID, len(anomalies))
+	log.Printf("[異常検知@%s] 移動平均法により %d 件の異常を検出しました", displayName, len(anomalies))
 
 	return anomalies
 }
@@ -672,21 +678,26 @@ func (s *StatisticsService) GenerateAIQuestion(anomaly models.AnomalyDetection) 
 	}
 
 	// フォールバック：テンプレートベースの質問と固定の選択肢
+	displayName := anomaly.ProductName
+	if displayName == "" {
+		displayName = anomaly.ProductID // 製品名がない場合はIDを使用
+	}
+
 	var question string
 	if anomaly.AnomalyType == "急増" {
 		question = fmt.Sprintf(
-			"📈 %s に製品 %s の売上が通常より %.0f 増加しました（期待値: %.0f → 実績: %.0f）。この日に特別なイベント、キャンペーン、または外的要因はありましたか？",
+			"📈 %s に%s の売上が通常より %.0f 増加しました（期待値: %.0f → 実績: %.0f）。この日に特別なイベント、キャンペーン、または外的要因はありましたか？",
 			anomaly.Date,
-			anomaly.ProductID,
+			displayName,
 			anomaly.Deviation,
 			anomaly.ExpectedValue,
 			anomaly.ActualValue,
 		)
 	} else {
 		question = fmt.Sprintf(
-			"📉 %s に製品 %s の売上が通常より %.0f 減少しました（期待値: %.0f → 実績: %.0f）。この日に売上減少の原因となった要因（天候、競合、在庫切れなど）はありましたか？",
+			"📉 %s に%s の売上が通常より %.0f 減少しました（期待値: %.0f → 実績: %.0f）。この日に売上減少の原因となった要因（天候、競合、在庫切れなど）はありましたか？",
 			anomaly.Date,
-			anomaly.ProductID,
+			displayName,
 			anomaly.Deviation,
 			anomaly.ExpectedValue,
 			anomaly.ActualValue,

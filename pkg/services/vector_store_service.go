@@ -629,6 +629,74 @@ func (s *VectorStoreService) DeletePoint(ctx context.Context, collectionName str
 	return nil
 }
 
+// DeleteDocumentByFileName は指定したfile_nameを持つ全ポイントを削除
+func (s *VectorStoreService) DeleteDocumentByFileName(ctx context.Context, collectionName string, fileName string) error {
+	// コレクションの存在確認
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return fmt.Errorf("コレクションの確認に失敗: %w", err)
+	}
+
+	// file_nameでフィルタして全ポイントを取得
+	filter := &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			{
+				ConditionOneOf: &qdrant.Condition_Field{
+					Field: &qdrant.FieldCondition{
+						Key: "file_name",
+						Match: &qdrant.Match{
+							MatchValue: &qdrant.Match_Keyword{
+								Keyword: fileName,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	withPayload := false
+	limit := uint32(1000) // 最大1000チャンク
+	scrollResult, err := s.qdrantClient.Scroll(ctx, &qdrant.ScrollPoints{
+		CollectionName: collectionName,
+		Filter:         filter,
+		Limit:          &limit,
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
+	})
+	if err != nil {
+		return fmt.Errorf("ポイント取得に失敗: %w", err)
+	}
+
+	points := scrollResult.GetResult()
+	if len(points) == 0 {
+		// 初回実行時は削除対象がないので、これはエラーではない
+		return nil
+	}
+
+	// ポイントIDを収集
+	var idsToDelete []*qdrant.PointId
+	for _, point := range points {
+		idsToDelete = append(idsToDelete, point.Id)
+	}
+
+	// 削除実行
+	waitDelete := true
+	_, err = s.qdrantClient.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: collectionName,
+		Wait:           &waitDelete,
+		Points: &qdrant.PointsSelector{
+			PointsSelectorOneOf: &qdrant.PointsSelector_Points{
+				Points: &qdrant.PointsIdsList{Ids: idsToDelete},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("ポイント削除に失敗: %w", err)
+	}
+
+	log.Printf("  🗑️ %d 個の古いチャンクを削除しました", len(idsToDelete))
+	return nil
+}
+
 // RecreateCollection コレクションを削除して再作成（全データ削除）
 func (s *VectorStoreService) RecreateCollection(ctx context.Context, collectionName string) error {
 	// コレクションを削除
@@ -716,9 +784,43 @@ func (s *VectorStoreService) ensureCollection(ctx context.Context, collectionNam
 			return nil // エラーでも続行
 		}
 		log.Printf("コレクション '%s' を作成しました", collectionName)
+		
+		// file_name フィールドにインデックスを作成（フィルタ検索用）
+		indexCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		
+		fieldType := qdrant.FieldType_FieldTypeKeyword
+		_, err = s.qdrantClient.CreateFieldIndex(indexCtx, &qdrant.CreateFieldIndexCollection{
+			CollectionName: collectionName,
+			FieldName:      "file_name",
+			FieldType:      &fieldType,
+		})
+		if err != nil {
+			log.Printf("⚠️ file_name インデックス作成に失敗（続行します）: %v", err)
+		} else {
+			log.Printf("✅ file_name フィールドにインデックスを作成しました")
+		}
+		
 		log.Printf("📌 重要: 'type' フィールドでフィルタリングするには、Qdrantに自動インデックスが作成されます")
 	} else {
 		log.Printf("コレクション '%s' は既に存在します", collectionName)
+		
+		// 既存コレクションにもインデックスが必要か確認して作成
+		indexCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		
+		fieldType := qdrant.FieldType_FieldTypeKeyword
+		_, err := s.qdrantClient.CreateFieldIndex(indexCtx, &qdrant.CreateFieldIndexCollection{
+			CollectionName: collectionName,
+			FieldName:      "file_name",
+			FieldType:      &fieldType,
+		})
+		if err != nil {
+			// インデックスが既に存在する場合はエラーになるが、問題ない
+			log.Printf("  💡 file_name インデックスは既に存在するか、作成不要です")
+		} else {
+			log.Printf("  ✅ 既存コレクションに file_name インデックスを追加しました")
+		}
 	}
 
 	return nil

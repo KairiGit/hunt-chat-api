@@ -110,13 +110,17 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 
 	// 列インデックスを検出
 	dateColIdx := findIndex(header, "date", "日付")
-	productColIdx := findIndex(header, "product_code", "製品コード", "product_id", "商品ID", "product", "製品", "商品", "製品名")
+	// 製品ID列（必須）
+	productIDColIdx := findIndex(header, "製品ID", "製品id", "製品コード", "商品ID", "商品id", "商品コード", "product_code", "product_id", "product_ID")
+	// 製品名列（オプション・表示用）
+	productNameColIdx := findIndex(header, "製品名", "製品", "商品名", "商品", "product", "product_name")
 	salesColIdx := findIndex(header, "sales", "quantity", "販売数", "数量")
 
 	// 🔍 デバッグ: 列インデックスをログ出力
 	log.Printf("🔍 [列検出] ヘッダー: %v", header)
 	log.Printf("🔍 [列検出] 日付列インデックス: %d", dateColIdx)
-	log.Printf("🔍 [列検出] 製品列インデックス: %d", productColIdx)
+	log.Printf("🔍 [列検出] 製品ID列インデックス: %d", productIDColIdx)
+	log.Printf("🔍 [列検出] 製品名列インデックス: %d", productNameColIdx)
 	log.Printf("🔍 [列検出] 販売数列インデックス: %d", salesColIdx)
 
 	var missingCols []string
@@ -124,9 +128,9 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		missingCols = append(missingCols, "日付")
 		log.Printf("❌ [列検出] 日付列が見つかりません。ヘッダー: %v", header)
 	}
-	if productColIdx == -1 {
-		missingCols = append(missingCols, "製品")
-		log.Printf("❌ [列検出] 製品列が見つかりません。ヘッダー: %v", header)
+	if productIDColIdx == -1 {
+		missingCols = append(missingCols, "製品ID")
+		log.Printf("❌ [列検出] 製品ID列が見つかりません。ヘッダー: %v", header)
 	}
 	if salesColIdx == -1 {
 		missingCols = append(missingCols, "販売数")
@@ -141,15 +145,20 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	}
 
 	type monthlySales struct {
-		TotalSales int
-		DataPoints int
+		TotalSales  int
+		DataPoints  int
+		ProductName string // 製品名を保存
 	}
 	productSales := make(map[string]map[time.Month]*monthlySales)
 
 	for _, row := range dataRows {
-		if len(row) > dateColIdx && len(row) > productColIdx && len(row) > salesColIdx {
+		if len(row) > dateColIdx && len(row) > productIDColIdx && len(row) > salesColIdx {
 			dateStr := row[dateColIdx]
-			product := row[productColIdx]
+			productID := row[productIDColIdx]
+			productName := ""
+			if productNameColIdx != -1 && len(row) > productNameColIdx {
+				productName = row[productNameColIdx]
+			}
 			salesStr := row[salesColIdx]
 
 			var t time.Time
@@ -159,16 +168,16 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			}
 
 			sales, convErr := strconv.Atoi(salesStr)
-			if product != "" && !t.IsZero() && convErr == nil {
+			if productID != "" && !t.IsZero() && convErr == nil {
 				month := t.Month()
-				if productSales[product] == nil {
-					productSales[product] = make(map[time.Month]*monthlySales)
+				if productSales[productID] == nil {
+					productSales[productID] = make(map[time.Month]*monthlySales)
 				}
-				if productSales[product][month] == nil {
-					productSales[product][month] = &monthlySales{}
+				if productSales[productID][month] == nil {
+					productSales[productID][month] = &monthlySales{ProductName: productName}
 				}
-				productSales[product][month].TotalSales += sales
-				productSales[product][month].DataPoints++
+				productSales[productID][month].TotalSales += sales
+				productSales[productID][month].DataPoints++
 			}
 		}
 	}
@@ -234,7 +243,8 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	var parseErrors []string
 	successfulParse := 0
 
-	log.Printf("🔍 CSV解析開始: 総行数=%d, dateCol=%d, productCol=%d, salesCol=%d", len(dataRows), dateColIdx, productColIdx, salesColIdx)
+	log.Printf("🔍 CSV解析開始: 総行数=%d, dateCol=%d, productIDCol=%d, productNameCol=%d, salesCol=%d",
+		len(dataRows), dateColIdx, productIDColIdx, productNameColIdx, salesColIdx)
 	log.Printf("📋 ヘッダー: %v", header)
 
 	// 最初の数行の生データをログに出力
@@ -245,14 +255,19 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	}
 
 	for rowIdx, row := range dataRows {
-		if len(row) > dateColIdx && len(row) > productColIdx && len(row) > salesColIdx {
+		if len(row) > dateColIdx && len(row) > productIDColIdx && len(row) > salesColIdx {
 			dateStr := strings.TrimSpace(row[dateColIdx])
-			product := strings.TrimSpace(row[productColIdx])
+			productID := strings.TrimSpace(row[productIDColIdx])
+			productName := ""
+			if productNameColIdx != -1 && len(row) > productNameColIdx {
+				productName = strings.TrimSpace(row[productNameColIdx])
+			}
 			salesStr := strings.TrimSpace(row[salesColIdx])
 
 			// デバッグ: 最初の数行を詳細ログ
 			if rowIdx < 3 {
-				log.Printf("  🔎 行%d 解析中: date='%s', product='%s', sales='%s'", rowIdx+1, dateStr, product, salesStr)
+				log.Printf("  🔎 行%d 解析中: date='%s', productID='%s', productName='%s', sales='%s'",
+					rowIdx+1, dateStr, productID, productName, salesStr)
 			}
 
 			var t time.Time
@@ -267,10 +282,10 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			sales, convErr := strconv.ParseFloat(salesStr, 64)
 
 			// 解析失敗時のログ
-			if product == "" || t.IsZero() || convErr != nil {
+			if productID == "" || t.IsZero() || convErr != nil {
 				if rowIdx < 5 { // 最初の5行のみ詳細エラーを記録
 					errorMsg := fmt.Sprintf("行%d: ", rowIdx+1)
-					if product == "" {
+					if productID == "" {
 						errorMsg += "製品ID空, "
 					}
 					if t.IsZero() {
@@ -285,20 +300,22 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 			}
 
 			salesData = append(salesData, models.WeatherSalesData{
-				Date:      t.Format("2006-01-02"),
-				ProductID: product,
-				Sales:     sales,
+				Date:        t.Format("2006-01-02"),
+				ProductID:   productID,
+				ProductName: productName,
+				Sales:       sales,
 			})
 			successfulParse++
 
 			// 最初の成功例をログ
 			if successfulParse == 1 {
-				log.Printf("  ✅ 初回成功: date=%s, product='%s', sales=%.2f", t.Format("2006-01-02"), product, sales)
+				log.Printf("  ✅ 初回成功: date=%s, productID='%s', productName='%s', sales=%.2f",
+					t.Format("2006-01-02"), productID, productName, sales)
 			}
 		} else {
 			if rowIdx < 5 {
-				parseErrors = append(parseErrors, fmt.Sprintf("行%d: 列数不足 (len=%d, 必要: date=%d, product=%d, sales=%d)",
-					rowIdx+1, len(row), dateColIdx, productColIdx, salesColIdx))
+				parseErrors = append(parseErrors, fmt.Sprintf("行%d: 列数不足 (len=%d, 必要: date=%d, productID=%d, sales=%d)",
+					rowIdx+1, len(row), dateColIdx, productIDColIdx, salesColIdx))
 			}
 		}
 	}
@@ -406,13 +423,17 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 				log.Printf("[デバッグ] 製品ID '%s' の異常検知を実行中 (%d件のデータ)", productID, len(pSalesData))
 				var salesFloats []float64
 				var datesStrings []string
+				productName := "" // 製品名を取得
 				for _, sd := range pSalesData {
 					salesFloats = append(salesFloats, sd.Sales)
 					datesStrings = append(datesStrings, sd.Date)
+					if productName == "" && sd.ProductName != "" {
+						productName = sd.ProductName // 最初に見つかった製品名を使用
+					}
 				}
 
 				if len(salesFloats) > 0 {
-					detectedAnomalies := ah.statisticsService.DetectAnomalies(salesFloats, datesStrings, productID)
+					detectedAnomalies := ah.statisticsService.DetectAnomalies(salesFloats, datesStrings, productID, productName)
 					// 各異常に対してAIが質問を生成 (並列処理)
 					var wg sync.WaitGroup
 					for i := range detectedAnomalies {
@@ -502,18 +523,19 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	response := gin.H{
 		"success":          true,
 		"summary":          summary.String(),
-		"sales_data_count": len(salesData),        // デバッグ用
-		"backend_version":  "2025-10-16-debug-v4", // 🔍 バージョン確認用
+		"sales_data_count": len(salesData),          // デバッグ用
+		"backend_version":  "2025-10-21-product-v1", // 🔍 バージョン確認用
 		"debug": gin.H{ // 🔍 デバッグ情報を追加
-			"header":            header,
-			"date_col_index":    dateColIdx,
-			"product_col_index": productColIdx,
-			"sales_col_index":   salesColIdx,
-			"total_rows":        len(dataRows),
-			"successful_parses": successfulParse,
-			"failed_parses":     len(dataRows) - successfulParse,
-			"first_3_rows":      dataRows[:int(math.Min(3, float64(len(dataRows))))],
-			"parse_errors":      parseErrors,
+			"header":                 header,
+			"date_col_index":         dateColIdx,
+			"product_id_col_index":   productIDColIdx,
+			"product_name_col_index": productNameColIdx,
+			"sales_col_index":        salesColIdx,
+			"total_rows":             len(dataRows),
+			"successful_parses":      successfulParse,
+			"failed_parses":          len(dataRows) - successfulParse,
+			"first_3_rows":           dataRows[:int(math.Min(3, float64(len(dataRows))))],
+			"parse_errors":           parseErrors,
 		},
 	}
 	if analysisReport != nil {
@@ -1056,8 +1078,9 @@ func (ah *AIHandler) DetectAnomaliesInSales(c *gin.Context) {
 		return
 	}
 
-	// 異常検知を実行
-	anomalies := ah.statisticsService.DetectAnomalies(req.Sales, req.Dates, req.ProductID)
+	// 異常検知を実行（製品名は空で渡す - このAPIではProductNameフィールドがないため）
+	productName := ""
+	anomalies := ah.statisticsService.DetectAnomalies(req.Sales, req.Dates, req.ProductID, productName)
 
 	// 各異常に対してAIが質問を生成
 	for i := range anomalies {
