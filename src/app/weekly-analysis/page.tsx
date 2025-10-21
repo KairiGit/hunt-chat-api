@@ -57,6 +57,7 @@ export default function WeeklyAnalysisPage() {
   const [productId, setProductId] = useState('P001');
   const [startDate, setStartDate] = useState('2024-01-01');
   const [endDate, setEndDate] = useState('2024-03-31');
+  const [granularity, setGranularity] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
 
   const products = [
     { id: 'P001', name: '製品A' },
@@ -76,6 +77,7 @@ export default function WeeklyAnalysisPage() {
           product_id: productId,
           start_date: startDate,
           end_date: endDate,
+          granularity: granularity,
         }),
       });
 
@@ -117,8 +119,12 @@ export default function WeeklyAnalysisPage() {
       <div className="max-w-7xl mx-auto space-y-6">
         {/* ヘッダー */}
         <div>
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">📊 週次売上分析</h1>
-          <p className="text-gray-600">製造業に最適化された週単位での販売実績分析</p>
+          <h1 className="text-4xl font-bold text-gray-800 mb-2">
+            📊 {granularity === 'daily' ? '日次' : granularity === 'monthly' ? '月次' : '週次'}売上分析
+          </h1>
+          <p className="text-gray-600">
+            製造業に最適化された{granularity === 'daily' ? '日別' : granularity === 'monthly' ? '月別' : '週別'}での販売実績分析
+          </p>
         </div>
 
         {/* 分析条件入力 */}
@@ -128,7 +134,7 @@ export default function WeeklyAnalysisPage() {
             <CardDescription>製品と期間を選択して週次分析を実行します</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
                 <Label htmlFor="product">製品</Label>
                 <select
@@ -142,6 +148,20 @@ export default function WeeklyAnalysisPage() {
                       {product.id} - {product.name}
                     </option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <Label htmlFor="granularity">集約粒度</Label>
+                <select
+                  id="granularity"
+                  value={granularity}
+                  onChange={(e) => setGranularity(e.target.value as 'daily' | 'weekly' | 'monthly')}
+                  className="w-full p-2 border rounded-lg"
+                >
+                  <option value="daily">📅 日次</option>
+                  <option value="weekly">📆 週次</option>
+                  <option value="monthly">📊 月次</option>
                 </select>
               </div>
 
@@ -187,20 +207,26 @@ export default function WeeklyAnalysisPage() {
                   <CardTitle className="text-sm font-medium opacity-90">分析期間</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{analysis.total_weeks}週間</div>
+                  <div className="text-2xl font-bold">
+                    {analysis.total_weeks}{granularity === 'daily' ? '日間' : granularity === 'monthly' ? 'ヶ月' : '週間'}
+                  </div>
                   <p className="text-xs opacity-75 mt-1">{analysis.analysis_period}</p>
                 </CardContent>
               </Card>
 
               <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium opacity-90">週平均売上</CardTitle>
+                  <CardTitle className="text-sm font-medium opacity-90">
+                    {granularity === 'daily' ? '日' : granularity === 'monthly' ? '月' : '週'}平均売上
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
                     {formatNumber(analysis.overall_stats.average_weekly_sales)}
                   </div>
-                  <p className="text-xs opacity-75 mt-1">個/週</p>
+                  <p className="text-xs opacity-75 mt-1">
+                    個/{granularity === 'daily' ? '日' : granularity === 'monthly' ? '月' : '週'}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -268,19 +294,27 @@ export default function WeeklyAnalysisPage() {
             {/* 週次サマリーテーブル */}
             <Card>
               <CardHeader>
-                <CardTitle>📅 週次内訳</CardTitle>
-                <CardDescription>各週の詳細な売上データ</CardDescription>
+                <CardTitle>
+                  📅 {granularity === 'daily' ? '日次' : granularity === 'monthly' ? '月次' : '週次'}内訳
+                </CardTitle>
+                <CardDescription>
+                  各{granularity === 'daily' ? '日' : granularity === 'monthly' ? '月' : '週'}の詳細な売上データ
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b bg-gray-50">
-                        <th className="text-left p-3">週</th>
+                        <th className="text-left p-3">
+                          {granularity === 'daily' ? '日' : granularity === 'monthly' ? '月' : '週'}
+                        </th>
                         <th className="text-left p-3">期間</th>
                         <th className="text-right p-3">合計売上</th>
                         <th className="text-right p-3">日平均</th>
-                        <th className="text-right p-3">前週比</th>
+                        <th className="text-right p-3">
+                          前{granularity === 'daily' ? '日' : granularity === 'monthly' ? '月' : '週'}比
+                        </th>
                         <th className="text-right p-3">営業日</th>
                         <th className="text-right p-3">平均気温</th>
                       </tr>
@@ -291,7 +325,9 @@ export default function WeeklyAnalysisPage() {
                           key={week.week_number}
                           className="border-b hover:bg-gray-50"
                         >
-                          <td className="p-3 font-semibold">第{week.week_number}週</td>
+                          <td className="p-3 font-semibold">
+                            第{week.week_number}{granularity === 'daily' ? '日' : granularity === 'monthly' ? '月' : '週'}
+                          </td>
                           <td className="p-3 text-sm text-gray-600">
                             {week.week_start} 〜 {week.week_end}
                           </td>

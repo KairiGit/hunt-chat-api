@@ -29,6 +29,9 @@ export default function AnalysisPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [granularity, setGranularity] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [pendingGranularity, setPendingGranularity] = useState<'daily' | 'weekly' | 'monthly' | null>(null);
+  const [isGranularityChangeDialogOpen, setGranularityChangeDialogOpen] = useState(false);
   
   const [reportList, setReportList] = useState<AnalysisReportHeader[]>([]);
   const [isLoadingList, setIsLoadingList] = useState(true);
@@ -41,6 +44,31 @@ export default function AnalysisPage() {
   const [isDeleteAllReportsDialogOpen, setDeleteAllReportsDialogOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleGranularityChange = (newGranularity: 'daily' | 'weekly' | 'monthly') => {
+    // 既に分析済みの場合はアラートを表示
+    if (selectedReport || analysisSummary) {
+      setPendingGranularity(newGranularity);
+      setGranularityChangeDialogOpen(true);
+    } else {
+      setGranularity(newGranularity);
+    }
+  };
+
+  const confirmGranularityChange = () => {
+    if (pendingGranularity) {
+      setGranularity(pendingGranularity);
+      setSelectedReport(null);
+      setAnalysisSummary('');
+      setPendingGranularity(null);
+    }
+    setGranularityChangeDialogOpen(false);
+  };
+
+  const cancelGranularityChange = () => {
+    setPendingGranularity(null);
+    setGranularityChangeDialogOpen(false);
+  };
 
   const fetchReportList = async () => {
     setIsLoadingList(true);
@@ -167,6 +195,7 @@ export default function AnalysisPage() {
     setSelectedReport(null);
     const formData = new FormData();
     formData.append('file', selectedFile);
+    formData.append('granularity', granularity); // 🆕 粒度を追加
 
     try {
       const response = await fetch('/api/proxy/analyze-file', { 
@@ -220,9 +249,31 @@ export default function AnalysisPage() {
           <CardDescription>分析したい販売実績データ（.xlsx, .csv）を選択してください。</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid w-full items-center gap-1.5">
-            <Label htmlFor="file-upload">ファイル</Label>
-            <Input id="file-upload" type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx, .csv" />
+          <div className="space-y-4">
+            <div className="grid w-full items-center gap-1.5">
+              <Label htmlFor="granularity">データ集約粒度</Label>
+              <select
+                id="granularity"
+                value={granularity}
+                onChange={(e) => handleGranularityChange(e.target.value as 'daily' | 'weekly' | 'monthly')}
+                className="w-full p-2 border rounded-lg"
+                disabled={isLoading}
+              >
+                <option value="daily">📅 日次（詳細分析・短期トレンド）</option>
+                <option value="weekly">📆 週次（推奨・中期トレンド）</option>
+                <option value="monthly">📊 月次（長期トレンド・高速処理）</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {granularity === 'daily' && '⚡ 処理時間: やや遅い | 📊 詳細度: 高 | 💡 用途: 短期分析（1週間〜1ヶ月）'}
+                {granularity === 'weekly' && '⚡ 処理時間: 普通 | 📊 詳細度: 中 | 💡 用途: 中期分析（1ヶ月〜6ヶ月）⭐'}
+                {granularity === 'monthly' && '⚡ 処理時間: 高速 | 📊 詳細度: 低 | 💡 用途: 長期分析（6ヶ月以上）'}
+              </p>
+            </div>
+            
+            <div className="grid w-full items-center gap-1.5">
+              <Label htmlFor="file-upload">ファイル</Label>
+              <Input id="file-upload" type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx, .csv" />
+            </div>
           </div>
         </CardContent>
         <CardFooter className="flex justify-end">
@@ -362,6 +413,42 @@ export default function AnalysisPage() {
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteAllReports} className="bg-red-500 hover:bg-red-600">
               すべて削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 粒度変更確認ダイアログ */}
+      <AlertDialog open={isGranularityChangeDialogOpen} onOpenChange={setGranularityChangeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>⚠️ データ粒度を変更しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              粒度を変更すると、現在の分析結果がクリアされます。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {pendingGranularity && (
+            <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-md">
+              <p className="font-semibold text-blue-900 dark:text-blue-100">
+                {granularity === 'daily' && '日次'}
+                {granularity === 'weekly' && '週次'}
+                {granularity === 'monthly' && '月次'}
+                {' → '}
+                {pendingGranularity === 'daily' && '日次'}
+                {pendingGranularity === 'weekly' && '週次'}
+                {pendingGranularity === 'monthly' && '月次'}
+              </p>
+              <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                {pendingGranularity === 'daily' && '📅 詳細な日次分析に切り替えます'}
+                {pendingGranularity === 'weekly' && '📆 週次分析に切り替えます（推奨）'}
+                {pendingGranularity === 'monthly' && '📊 月次の高速分析に切り替えます'}
+              </p>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelGranularityChange}>キャンセル</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmGranularityChange} className="bg-blue-500 hover:bg-blue-600">
+              変更する
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

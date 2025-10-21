@@ -56,7 +56,7 @@ func findIndex(slice []string, candidates ...string) int {
 	return -1
 }
 
-// AnalyzeFile: Logic-based file analysis with monthly aggregation
+// AnalyzeFile: Logic-based file analysis with configurable data granularity
 func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 	if ah.vectorStoreService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -66,6 +66,23 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		return
 	}
 	c.Request.ParseMultipartForm(10 << 20) // 10MB limit
+
+	// データ粒度を取得（デフォルト: weekly）
+	granularity := c.PostForm("granularity")
+	if granularity == "" {
+		granularity = "weekly"
+	}
+
+	// 粒度のバリデーション
+	if granularity != "daily" && granularity != "weekly" && granularity != "monthly" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   fmt.Sprintf("無効な粒度です: %s。'daily', 'weekly', 'monthly' のいずれかを指定してください。", granularity),
+		})
+		return
+	}
+
+	log.Printf("📊 [ファイル分析] データ粒度: %s", granularity)
 
 	file, fileHeader, err := c.Request.FormFile("file")
 	if err != nil {
@@ -144,12 +161,16 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		return
 	}
 
-	type monthlySales struct {
+	// 粒度に応じた集約用データ構造
+	type aggregatedSales struct {
 		TotalSales  int
 		DataPoints  int
-		ProductName string // 製品名を保存
+		ProductName string
+		PeriodKey   string // 期間キー（日付、週、月）
 	}
-	productSales := make(map[string]map[time.Month]*monthlySales)
+	
+	// 製品ID -> 期間キー -> 売上データ
+	productSales := make(map[string]map[string]*aggregatedSales)
 
 	for _, row := range dataRows {
 		if len(row) > dateColIdx && len(row) > productIDColIdx && len(row) > salesColIdx {
@@ -169,24 +190,50 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 
 			sales, convErr := strconv.Atoi(salesStr)
 			if productID != "" && !t.IsZero() && convErr == nil {
-				month := t.Month()
+				// 粒度に応じた期間キーを生成
+				var periodKey string
+				switch granularity {
+				case "daily":
+					periodKey = t.Format("2006-01-02")
+				case "weekly":
+					// 月曜始まりの週番号
+					year, week := t.ISOWeek()
+					periodKey = fmt.Sprintf("%d-W%02d", year, week)
+				case "monthly":
+					periodKey = t.Format("2006-01")
+				}
+
 				if productSales[productID] == nil {
-					productSales[productID] = make(map[time.Month]*monthlySales)
+					productSales[productID] = make(map[string]*aggregatedSales)
 				}
-				if productSales[productID][month] == nil {
-					productSales[productID][month] = &monthlySales{ProductName: productName}
+				if productSales[productID][periodKey] == nil {
+					productSales[productID][periodKey] = &aggregatedSales{
+						ProductName: productName,
+						PeriodKey:   periodKey,
+					}
 				}
-				productSales[productID][month].TotalSales += sales
-				productSales[productID][month].DataPoints++
+				productSales[productID][periodKey].TotalSales += sales
+				productSales[productID][periodKey].DataPoints++
 			}
 		}
 	}
 
+	// 粒度に応じたラベル
+	var periodLabel string
+	switch granularity {
+	case "daily":
+		periodLabel = "日次"
+	case "weekly":
+		periodLabel = "週次"
+	case "monthly":
+		periodLabel = "月次"
+	}
+
 	var summary strings.Builder
-	summary.WriteString(fmt.Sprintf("ファイル概要:\n- ファイル名: %s\n- 総データ行数: %d\n- 列名: %s\n\n", fileName, len(dataRows), strings.Join(header, ", ")))
+	summary.WriteString(fmt.Sprintf("ファイル概要:\n- ファイル名: %s\n- 総データ行数: %d\n- 列名: %s\n- データ粒度: %s\n\n", fileName, len(dataRows), strings.Join(header, ", "), periodLabel))
 
 	if len(productSales) > 0 {
-		summary.WriteString("製品別の月次売上分析:\n")
+		summary.WriteString(fmt.Sprintf("製品別の%s売上分析:\n", periodLabel))
 		products := make([]string, 0, len(productSales))
 		for p := range productSales {
 			products = append(products, p)
@@ -194,30 +241,44 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 		sort.Strings(products)
 
 		for _, product := range products {
-			monthlyData := productSales[product]
-			var total, monthCount int
-			var bestMonth, worstMonth time.Month
+			periodData := productSales[product]
+			var total, periodCount int
+			var bestPeriod, worstPeriod string
 			minSales, maxSales := -1, -1
 
-			for month, salesData := range monthlyData {
+			// 期間キーをソート
+			periods := make([]string, 0, len(periodData))
+			for period := range periodData {
+				periods = append(periods, period)
+			}
+			sort.Strings(periods)
+
+			for _, period := range periods {
+				salesData := periodData[period]
 				avgSales := salesData.TotalSales / salesData.DataPoints
 				total += avgSales
-				monthCount++
+				periodCount++
 				if minSales == -1 || avgSales < minSales {
 					minSales = avgSales
-					worstMonth = month
+					worstPeriod = period
 				}
 				if maxSales == -1 || avgSales > maxSales {
 					maxSales = avgSales
-					bestMonth = month
+					bestPeriod = period
 				}
 			}
 
-			summary.WriteString(fmt.Sprintf("- 製品: %s\n", product))
-			if monthCount > 0 {
-				summary.WriteString(fmt.Sprintf("  - 平均月間売上: %d個\n", total/monthCount))
-				summary.WriteString(fmt.Sprintf("  - ベスト月: %s (%d個)\n", bestMonth.String(), maxSales))
-				summary.WriteString(fmt.Sprintf("  - ワースト月: %s (%d個)\n", worstMonth.String(), minSales))
+			// 製品名がある場合は表示、なければ製品IDのみ
+			productDisplay := product
+			if periodData[periods[0]].ProductName != "" {
+				productDisplay = fmt.Sprintf("%s (%s)", periodData[periods[0]].ProductName, product)
+			}
+
+			summary.WriteString(fmt.Sprintf("- 製品: %s\n", productDisplay))
+			if periodCount > 0 {
+				summary.WriteString(fmt.Sprintf("  - 平均%s売上: %d個\n", periodLabel, total/periodCount))
+				summary.WriteString(fmt.Sprintf("  - ベスト期間: %s (%d個)\n", bestPeriod, maxSales))
+				summary.WriteString(fmt.Sprintf("  - ワースト期間: %s (%d個)\n", worstPeriod, minSales))
 			}
 		}
 		summary.WriteString("\n")
@@ -420,7 +481,7 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 					log.Printf("[警告] ProductIDが空のデータグループが見つかりました。このグループの異常検知はスキップします。")
 					continue
 				}
-				log.Printf("[デバッグ] 製品ID '%s' の異常検知を実行中 (%d件のデータ)", productID, len(pSalesData))
+				log.Printf("[デバッグ] 製品ID '%s' の異常検知を実行中 (%d件のデータ) - 粒度: %s", productID, len(pSalesData), granularity)
 				var salesFloats []float64
 				var datesStrings []string
 				productName := "" // 製品名を取得
@@ -433,7 +494,8 @@ func (ah *AIHandler) AnalyzeFile(c *gin.Context) {
 				}
 
 				if len(salesFloats) > 0 {
-					detectedAnomalies := ah.statisticsService.DetectAnomalies(salesFloats, datesStrings, productID, productName)
+					// 粒度を指定して異常検知を実行
+					detectedAnomalies := ah.statisticsService.DetectAnomaliesWithGranularity(salesFloats, datesStrings, productID, productName, granularity)
 					// 各異常に対してAIが質問を生成 (並列処理)
 					var wg sync.WaitGroup
 					for i := range detectedAnomalies {
@@ -1184,13 +1246,29 @@ func (ah *AIHandler) AnalyzeWeeklySales(c *gin.Context) {
 	// 製品名を取得（簡易版：実際はDBから取得）
 	productName := ah.getProductName(req.ProductID)
 
-	// 週次分析を実行
+	// デフォルトの粒度は週次
+	granularity := req.Granularity
+	if granularity == "" {
+		granularity = "weekly"
+	}
+
+	// 粒度のバリデーション
+	if granularity != "daily" && granularity != "weekly" && granularity != "monthly" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "granularityは 'daily', 'weekly', 'monthly' のいずれかを指定してください",
+		})
+		return
+	}
+
+	// 週次分析を実行（粒度に応じて処理）
 	analysis, err := ah.statisticsService.AnalyzeWeeklySales(
 		req.ProductID,
 		productName,
 		salesData,
 		startDate,
 		endDate,
+		granularity,
 	)
 
 	if err != nil {

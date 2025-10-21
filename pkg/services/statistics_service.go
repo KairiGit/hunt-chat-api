@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"hunt-chat-api/pkg/models"
@@ -583,31 +584,70 @@ func (s *StatisticsService) PredictFutureSales(
 }
 
 // DetectAnomalies 売上データから異常値を検出する（移動平均乖離率法）
+// granularity: "daily", "weekly", "monthly" - データ集約粒度（デフォルト: "weekly"）
 func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, productID string, productName string) []models.AnomalyDetection {
-	windowSize := 30           // 30日間の移動平均
-	percentageThreshold := 0.5 // 50%の乖離
+	return s.DetectAnomaliesWithGranularity(sales, dates, productID, productName, "weekly")
+}
 
+// DetectAnomaliesWithGranularity 粒度を指定して異常検知を実行
+func (s *StatisticsService) DetectAnomaliesWithGranularity(sales []float64, dates []string, productID string, productName string, granularity string) []models.AnomalyDetection {
 	displayName := productName
 	if displayName == "" {
-		displayName = productID // 製品名がない場合はIDを使用
+		displayName = productID
 	}
 
-	if len(sales) < windowSize {
-		log.Printf("[異常検知@%s] データが少なく、移動平均を計算できません（%d件 < %d件）", displayName, len(sales), windowSize)
+	// デフォルトは週次
+	if granularity == "" {
+		granularity = "weekly"
+	}
+
+	log.Printf("[異常検知@%s] 粒度: %s でデータを集約してから異常検知を実行します", displayName, granularity)
+
+	// 日次データの場合のみ集約が必要（週次・月次の場合は既に集約済みと仮定）
+	aggregatedSales := sales
+	aggregatedDates := dates
+
+	if granularity != "daily" && len(sales) > 0 {
+		// データを週次または月次に集約
+		aggregatedSales, aggregatedDates = s.aggregateDataForAnomalyDetection(sales, dates, granularity)
+		log.Printf("[異常検知@%s] データを集約: %d件 → %d件", displayName, len(sales), len(aggregatedSales))
+	}
+
+	// 移動平均のウィンドウサイズを粒度に応じて調整
+	var windowSize int
+	var percentageThreshold float64
+
+	switch granularity {
+	case "daily":
+		windowSize = 30           // 30日間の移動平均
+		percentageThreshold = 0.5 // 50%の乖離
+	case "weekly":
+		windowSize = 4            // 4週間の移動平均
+		percentageThreshold = 0.4 // 40%の乖離（週次は変動が大きいため緩和）
+	case "monthly":
+		windowSize = 3            // 3ヶ月の移動平均
+		percentageThreshold = 0.3 // 30%の乖離（月次はさらに緩和）
+	default:
+		windowSize = 4
+		percentageThreshold = 0.4
+	}
+
+	if len(aggregatedSales) < windowSize {
+		log.Printf("[異常検知@%s] データが少なく、移動平均を計算できません（%d件 < %d件）", displayName, len(aggregatedSales), windowSize)
 		return []models.AnomalyDetection{}
 	}
 
 	var anomalies []models.AnomalyDetection
 
-	for i := windowSize; i < len(sales); i++ {
+	for i := windowSize; i < len(aggregatedSales); i++ {
 		// ウィンドウ内のデータを取得
-		window := sales[i-windowSize : i]
+		window := aggregatedSales[i-windowSize : i]
 
 		// 移動平均を計算
 		mean := s.calculateMean(window)
 
 		// 現在の値
-		currentValue := sales[i]
+		currentValue := aggregatedSales[i]
 
 		// 移動平均からの乖離を計算
 		deviation := currentValue - mean
@@ -629,7 +669,7 @@ func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, pro
 			}
 
 			anomalies = append(anomalies, models.AnomalyDetection{
-				Date:          dates[i],
+				Date:          aggregatedDates[i],
 				ProductID:     productID,
 				ProductName:   productName,
 				ActualValue:   currentValue,
@@ -647,6 +687,62 @@ func (s *StatisticsService) DetectAnomalies(sales []float64, dates []string, pro
 	return anomalies
 }
 
+// aggregateDataForAnomalyDetection 異常検知用にデータを集約
+func (s *StatisticsService) aggregateDataForAnomalyDetection(sales []float64, dates []string, granularity string) ([]float64, []string) {
+	if len(sales) != len(dates) {
+		log.Printf("[警告] sales と dates の長さが一致しません: %d != %d", len(sales), len(dates))
+		return sales, dates
+	}
+
+	// 期間キーごとにデータを集約
+	periodMap := make(map[string][]float64)
+	periodOrder := []string{} // 順序を保持
+
+	for i, dateStr := range dates {
+		t, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			log.Printf("[警告] 日付のパースに失敗: %s", dateStr)
+			continue
+		}
+
+		var periodKey string
+		switch granularity {
+		case "weekly":
+			// 月曜始まりの週番号
+			year, week := t.ISOWeek()
+			periodKey = fmt.Sprintf("%d-W%02d", year, week)
+		case "monthly":
+			periodKey = t.Format("2006-01")
+		default:
+			periodKey = dateStr // 日次の場合はそのまま
+		}
+
+		if _, exists := periodMap[periodKey]; !exists {
+			periodOrder = append(periodOrder, periodKey)
+		}
+		periodMap[periodKey] = append(periodMap[periodKey], sales[i])
+	}
+
+	// 集約データを生成
+	aggregatedSales := make([]float64, 0, len(periodOrder))
+	aggregatedDates := make([]string, 0, len(periodOrder))
+
+	for _, periodKey := range periodOrder {
+		values := periodMap[periodKey]
+		
+		// 合計を計算
+		var total float64
+		for _, v := range values {
+			total += v
+		}
+
+		aggregatedSales = append(aggregatedSales, total)
+		aggregatedDates = append(aggregatedDates, periodKey)
+	}
+
+	return aggregatedSales, aggregatedDates
+}
+
 // calculateSeverity 異常の深刻度を計算
 func (s *StatisticsService) calculateSeverity(absZScore float64) string {
 	if absZScore > 4.0 {
@@ -659,14 +755,56 @@ func (s *StatisticsService) calculateSeverity(absZScore float64) string {
 	return "low"
 }
 
+// formatDateForDisplay 日付を読みやすい形式にフォーマット
+// 例: "2022-04" → "2022年4月"
+//     "2022-W10" → "2022年 第10週"
+//     "2022-03-07" → "2022年3月7日"
+func (s *StatisticsService) formatDateForDisplay(date string) string {
+	// 月次形式: YYYY-MM
+	if len(date) == 7 && date[4] == '-' {
+		t, err := time.Parse("2006-01", date)
+		if err == nil {
+			return t.Format("2006年1月")
+		}
+	}
+	
+	// 週次形式: YYYY-WWW
+	if len(date) >= 7 && strings.Contains(date, "-W") {
+		parts := strings.Split(date, "-W")
+		if len(parts) == 2 {
+			return fmt.Sprintf("%s年 第%s週", parts[0], parts[1])
+		}
+	}
+	
+	// 日次形式: YYYY-MM-DD
+	if len(date) == 10 {
+		t, err := time.Parse("2006-01-02", date)
+		if err == nil {
+			return t.Format("2006年1月2日")
+		}
+	}
+	
+	// パースできない場合はそのまま返す
+	return date
+}
+
 // GenerateAIQuestion 異常値に基づいてAIが質問を生成
 func (s *StatisticsService) GenerateAIQuestion(anomaly models.AnomalyDetection) (string, []string) {
+	// 製品の表示名を決定（製品名があればそれを使用、なければID）
+	displayName := anomaly.ProductName
+	if displayName == "" {
+		displayName = anomaly.ProductID
+	}
+	
+	// 日付を読みやすい形式にフォーマット
+	formattedDate := s.formatDateForDisplay(anomaly.Date)
+	
 	// AIサービスが利用可能な場合は、AIに質問と選択肢を生成させる
 	if s.azureOpenAIService != nil {
 		// AnomalyDetectionをAnomalyに変換（必要なフィールドのみ）
 		anomalyForAI := models.Anomaly{
-			Date:        anomaly.Date,
-			ProductID:   anomaly.ProductID, // AnomalyDetectionにProductIDを追加したため利用可能
+			Date:        formattedDate, // フォーマット済みの日付を使用
+			ProductID:   displayName,    // 表示名を使用
 			Description: fmt.Sprintf("売上%s (実績: %.0f, 期待値: %.0f)", anomaly.AnomalyType, anomaly.ActualValue, anomaly.ExpectedValue),
 		}
 
@@ -678,16 +816,11 @@ func (s *StatisticsService) GenerateAIQuestion(anomaly models.AnomalyDetection) 
 	}
 
 	// フォールバック：テンプレートベースの質問と固定の選択肢
-	displayName := anomaly.ProductName
-	if displayName == "" {
-		displayName = anomaly.ProductID // 製品名がない場合はIDを使用
-	}
-
 	var question string
 	if anomaly.AnomalyType == "急増" {
 		question = fmt.Sprintf(
-			"📈 %s に%s の売上が通常より %.0f 増加しました（期待値: %.0f → 実績: %.0f）。この日に特別なイベント、キャンペーン、または外的要因はありましたか？",
-			anomaly.Date,
+			"📈 %s に「%s」の売上が通常より %.0f 増加しました（期待値: %.0f → 実績: %.0f）。この時期に特別なイベント、キャンペーン、または外的要因はありましたか？",
+			formattedDate,
 			displayName,
 			anomaly.Deviation,
 			anomaly.ExpectedValue,
@@ -695,8 +828,8 @@ func (s *StatisticsService) GenerateAIQuestion(anomaly models.AnomalyDetection) 
 		)
 	} else {
 		question = fmt.Sprintf(
-			"📉 %s に%s の売上が通常より %.0f 減少しました（期待値: %.0f → 実績: %.0f）。この日に売上減少の原因となった要因（天候、競合、在庫切れなど）はありましたか？",
-			anomaly.Date,
+			"📉 %s に「%s」の売上が通常より %.0f 減少しました（期待値: %.0f → 実績: %.0f）。この時期に売上減少の原因となった要因（天候、競合、在庫切れなど）はありましたか？",
+			formattedDate,
 			displayName,
 			anomaly.Deviation,
 			anomaly.ExpectedValue,
@@ -1080,27 +1213,43 @@ func (s *StatisticsService) buildFactorsList(regression *models.RegressionResult
 	return factors
 }
 
-// AnalyzeWeeklySales 週次単位での販売分析
-func (s *StatisticsService) AnalyzeWeeklySales(productID, productName string, salesData []models.SalesDataPoint, startDate, endDate time.Time) (*models.WeeklyAnalysisResponse, error) {
+// AnalyzeWeeklySales 週次単位での販売分析（粒度指定可能）
+func (s *StatisticsService) AnalyzeWeeklySales(productID, productName string, salesData []models.SalesDataPoint, startDate, endDate time.Time, granularity string) (*models.WeeklyAnalysisResponse, error) {
 	if len(salesData) == 0 {
 		return nil, fmt.Errorf("販売データが空です")
 	}
 
-	// データを週単位でグループ化
-	weeklyGroups := s.groupByWeek(salesData, startDate)
+	// デフォルトは週次
+	if granularity == "" {
+		granularity = "weekly"
+	}
 
-	// 週ごとのサマリーを生成
-	weeklySummaries := make([]models.WeeklySummary, 0)
-	var prevWeekSales float64 = 0
+	var weeklySummaries []models.WeeklySummary
 
-	for weekNum := 0; weekNum < len(weeklyGroups); weekNum++ {
-		weekData, exists := weeklyGroups[weekNum]
-		if !exists {
-			continue
+	switch granularity {
+	case "daily":
+		// 日次データ（集約なし）
+		weeklySummaries = s.groupByDay(salesData)
+	case "monthly":
+		// 月次データ
+		weeklySummaries = s.groupByMonth(salesData, startDate)
+	default: // "weekly"
+		// データを週単位でグループ化
+		weeklyGroups := s.groupByWeek(salesData, startDate)
+
+		// 週ごとのサマリーを生成
+		weeklySummaries = make([]models.WeeklySummary, 0)
+		var prevWeekSales float64 = 0
+
+		for weekNum := 0; weekNum < len(weeklyGroups); weekNum++ {
+			weekData, exists := weeklyGroups[weekNum]
+			if !exists {
+				continue
+			}
+			summary := s.calculateWeeklySummary(weekNum, weekData, prevWeekSales)
+			weeklySummaries = append(weeklySummaries, summary)
+			prevWeekSales = summary.TotalSales
 		}
-		summary := s.calculateWeeklySummary(weekNum, weekData, prevWeekSales)
-		weeklySummaries = append(weeklySummaries, summary)
-		prevWeekSales = summary.TotalSales
 	}
 
 	// 全体統計を計算
@@ -1121,6 +1270,7 @@ func (s *StatisticsService) AnalyzeWeeklySales(productID, productName string, sa
 		OverallStats:    overallStats,
 		Trends:          trends,
 		Recommendations: recommendations,
+		Granularity:     granularity,
 	}, nil
 }
 
@@ -1140,6 +1290,130 @@ func (s *StatisticsService) groupByWeek(data []models.SalesDataPoint, startDate 
 	}
 
 	return weeklyGroups
+}
+
+// groupByDay データを日次でサマリー化（集約なし）
+func (s *StatisticsService) groupByDay(data []models.SalesDataPoint) []models.WeeklySummary {
+	summaries := make([]models.WeeklySummary, 0, len(data))
+	var prevSales float64 = 0
+
+	for i, point := range data {
+		_, err := time.Parse("2006-01-02", point.Date)
+		if err != nil {
+			continue
+		}
+
+		var changeRate float64
+		if prevSales > 0 {
+			changeRate = ((point.Sales - prevSales) / prevSales) * 100
+		}
+
+		summaries = append(summaries, models.WeeklySummary{
+			WeekNumber:     i + 1,
+			WeekStart:      point.Date,
+			WeekEnd:        point.Date,
+			TotalSales:     point.Sales,
+			AverageSales:   point.Sales,
+			MinSales:       point.Sales,
+			MaxSales:       point.Sales,
+			BusinessDays:   1,
+			WeekOverWeek:   changeRate,
+			StdDev:         0,
+			AvgTemperature: point.Temperature,
+		})
+
+		prevSales = point.Sales
+	}
+
+	return summaries
+}
+
+// groupByMonth データを月次で集約
+func (s *StatisticsService) groupByMonth(data []models.SalesDataPoint, startDate time.Time) []models.WeeklySummary {
+	monthlyGroups := make(map[string][]models.SalesDataPoint)
+
+	// 月ごとにグループ化
+	for _, point := range data {
+		date, err := time.Parse("2006-01-02", point.Date)
+		if err != nil {
+			continue
+		}
+		monthKey := date.Format("2006-01")
+		monthlyGroups[monthKey] = append(monthlyGroups[monthKey], point)
+	}
+
+	// ソート用にキーを取得
+	monthKeys := make([]string, 0, len(monthlyGroups))
+	for key := range monthlyGroups {
+		monthKeys = append(monthKeys, key)
+	}
+	sort.Strings(monthKeys)
+
+	// サマリーを生成
+	summaries := make([]models.WeeklySummary, 0, len(monthKeys))
+	var prevMonthSales float64 = 0
+
+	for i, monthKey := range monthKeys {
+		monthData := monthlyGroups[monthKey]
+		if len(monthData) == 0 {
+			continue
+		}
+
+		// 月の開始・終了日を取得
+		firstDate, _ := time.Parse("2006-01-02", monthData[0].Date)
+		lastDate, _ := time.Parse("2006-01-02", monthData[len(monthData)-1].Date)
+
+		// 合計・平均・最小・最大を計算
+		var total, avgTemp, min, max, sumSquaredDiff float64
+		min = math.MaxFloat64
+		max = -math.MaxFloat64
+
+		for _, point := range monthData {
+			total += point.Sales
+			avgTemp += point.Temperature
+			if point.Sales < min {
+				min = point.Sales
+			}
+			if point.Sales > max {
+				max = point.Sales
+			}
+		}
+
+		businessDays := len(monthData)
+		average := total / float64(businessDays)
+		avgTemp = avgTemp / float64(businessDays)
+
+		// 前月比を計算
+		var monthOverMonth float64
+		if prevMonthSales > 0 {
+			monthOverMonth = ((total - prevMonthSales) / prevMonthSales) * 100
+		}
+
+		// 標準偏差を計算
+		for _, point := range monthData {
+			diff := point.Sales - average
+			sumSquaredDiff += diff * diff
+		}
+		stdDev := math.Sqrt(sumSquaredDiff / float64(businessDays))
+
+		summaries = append(summaries, models.WeeklySummary{
+			WeekNumber:     i + 1,
+			WeekStart:      firstDate.Format("2006-01-02"),
+			WeekEnd:        lastDate.Format("2006-01-02"),
+			TotalSales:     total,
+			AverageSales:   average,
+			MinSales:       min,
+			MaxSales:       max,
+			BusinessDays:   businessDays,
+			WeekOverWeek:   monthOverMonth,
+			StdDev:         stdDev,
+			AvgTemperature: avgTemp,
+		})
+
+		prevMonthSales = total
+	}
+
+	return summaries
 }
 
 // getWeekNumber 開始日からの週番号を計算（月曜始まり）

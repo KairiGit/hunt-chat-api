@@ -307,10 +307,11 @@ type ProductStatistics struct {
 
 // WeeklyAnalysisRequest represents a request for weekly sales analysis
 type WeeklyAnalysisRequest struct {
-	ProductID string           `json:"product_id" binding:"required"`
-	StartDate string           `json:"start_date" binding:"required"` // YYYY-MM-DD
-	EndDate   string           `json:"end_date" binding:"required"`   // YYYY-MM-DD
-	SalesData []SalesDataPoint `json:"sales_data"`
+	ProductID   string           `json:"product_id" binding:"required"`
+	StartDate   string           `json:"start_date" binding:"required"` // YYYY-MM-DD
+	EndDate     string           `json:"end_date" binding:"required"`   // YYYY-MM-DD
+	SalesData   []SalesDataPoint `json:"sales_data"`
+	Granularity string           `json:"granularity"` // "daily", "weekly", "monthly" (default: "weekly")
 }
 
 // WeeklyAnalysisResponse represents weekly aggregated analysis
@@ -323,6 +324,7 @@ type WeeklyAnalysisResponse struct {
 	OverallStats    WeeklyOverallStats `json:"overall_stats"`
 	Trends          WeeklyTrends       `json:"trends"`
 	Recommendations []string           `json:"recommendations"`
+	Granularity     string             `json:"granularity"` // "daily", "weekly", "monthly"
 }
 
 // WeeklySummary represents summary for a single week

@@ -784,11 +784,11 @@ func (s *VectorStoreService) ensureCollection(ctx context.Context, collectionNam
 			return nil // エラーでも続行
 		}
 		log.Printf("コレクション '%s' を作成しました", collectionName)
-		
+
 		// file_name フィールドにインデックスを作成（フィルタ検索用）
 		indexCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		
+
 		fieldType := qdrant.FieldType_FieldTypeKeyword
 		_, err = s.qdrantClient.CreateFieldIndex(indexCtx, &qdrant.CreateFieldIndexCollection{
 			CollectionName: collectionName,
@@ -800,15 +800,15 @@ func (s *VectorStoreService) ensureCollection(ctx context.Context, collectionNam
 		} else {
 			log.Printf("✅ file_name フィールドにインデックスを作成しました")
 		}
-		
+
 		log.Printf("📌 重要: 'type' フィールドでフィルタリングするには、Qdrantに自動インデックスが作成されます")
 	} else {
 		log.Printf("コレクション '%s' は既に存在します", collectionName)
-		
+
 		// 既存コレクションにもインデックスが必要か確認して作成
 		indexCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		
+
 		fieldType := qdrant.FieldType_FieldTypeKeyword
 		_, err := s.qdrantClient.CreateFieldIndex(indexCtx, &qdrant.CreateFieldIndexCollection{
 			CollectionName: collectionName,
