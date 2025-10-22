@@ -54,6 +54,64 @@ func (s *StatisticsService) CalculateCorrelation(x, y []float64) (float64, error
 	return numerator / denominator, nil
 }
 
+// CalculateLaggedCorrelations x(t) vs y(t+lag) for lag in [-maxLagDays, +maxLagDays].
+// Returns a sorted list by absolute correlation desc.
+func (s *StatisticsService) CalculateLaggedCorrelations(xDates []string, xVals []float64, yDates []string, yVals []float64, maxLagDays int) ([]models.CorrelationResult, error) {
+	if len(xDates) != len(xVals) || len(yDates) != len(yVals) {
+		return nil, fmt.Errorf("データ系列の長さが一致しません")
+	}
+	if len(xVals) < 5 || len(yVals) < 5 {
+		return nil, fmt.Errorf("データ点が不足しています（最低5点）")
+	}
+	// Build map for fast lookup
+	xMap := make(map[string]float64, len(xDates))
+	for i, d := range xDates { xMap[d] = xVals[i] }
+	yMap := make(map[string]float64, len(yDates))
+	for i, d := range yDates { yMap[d] = yVals[i] }
+
+	// Helper to shift dates by lag days
+	shift := func(date string, lag int) (string, bool) {
+		t, err := time.Parse("2006-01-02", date)
+		if err != nil { return "", false }
+		return t.AddDate(0, 0, lag).Format("2006-01-02"), true
+	}
+
+	var results []models.CorrelationResult
+	for lag := -maxLagDays; lag <= maxLagDays; lag++ {
+		var xs, ys []float64
+		// align on x dates
+		for _, d := range xDates {
+			if d == "" { continue }
+			shifted, ok := shift(d, lag)
+			if !ok { continue }
+			xv, okx := xMap[d]
+			yv, oky := yMap[shifted]
+			if okx && oky {
+				xs = append(xs, xv)
+				ys = append(ys, yv)
+			}
+		}
+		if len(xs) >= 5 && len(xs) == len(ys) {
+			r, err := s.CalculateCorrelation(xs, ys)
+			if err == nil {
+				p := s.CalculatePValue(r, len(xs))
+				label := "lag=0"
+				if lag > 0 { label = fmt.Sprintf("yがxに対して+%d日遅れ", lag) }
+				if lag < 0 { label = fmt.Sprintf("yがxに対して%d日先行", -lag) }
+				results = append(results, models.CorrelationResult{
+					Factor:          label,
+					CorrelationCoef: r,
+					PValue:          p,
+					SampleSize:      len(xs),
+					Interpretation:  s.InterpretCorrelation(r, p),
+				})
+			}
+		}
+	}
+	sort.Slice(results, func(i, j int) bool { return math.Abs(results[i].CorrelationCoef) > math.Abs(results[j].CorrelationCoef) })
+	return results, nil
+}
+
 // CalculatePValue 相関係数のp値を近似計算（簡易版）
 func (s *StatisticsService) CalculatePValue(r float64, n int) float64 {
 	if n < 3 {

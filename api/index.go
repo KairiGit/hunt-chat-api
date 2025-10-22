@@ -57,6 +57,7 @@ func setupApp() *gin.Engine {
 		// ハンドラーの初期化
 		weatherHandler := handlers.NewWeatherHandler()
 		demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
+		economicHandler := handlers.NewEconomicHandler(vectorStoreService)
 		aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), demandForecastHandler.GetDemandForecastService(), vectorStoreService)
 
 		// 認証ミドルウェア
@@ -176,6 +177,15 @@ func setupApp() *gin.Engine {
 
 				// 未回答の異常取得API
 				ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)
+			}
+
+			// 経済/金融データAPI（CSV疑似yfinance）
+			econ := v1.Group("/econ")
+			{
+				econ.GET("/series", economicHandler.GetSeries)
+				econ.GET("/returns", economicHandler.GetReturns)
+				econ.POST("/register", economicHandler.RegisterSymbol)
+				econ.POST("/import", economicHandler.ImportCSV)
 			}
 		}
 

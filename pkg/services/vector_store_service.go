@@ -697,6 +697,325 @@ func (s *VectorStoreService) DeleteDocumentByFileName(ctx context.Context, colle
 	return nil
 }
 
+// EnsureEconomicCollection ensures the economic_daily_summaries collection exists and indexes are set.
+func (s *VectorStoreService) EnsureEconomicCollection(ctx context.Context) error {
+	collectionName := "economic_daily_summaries"
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return err
+	}
+	// Create indexes on symbol and date for efficient filtering
+	fieldType := qdrant.FieldType_FieldTypeKeyword
+	// symbol
+	idxCtx, cancelIdx := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelIdx()
+	_, err := s.qdrantClient.CreateFieldIndex(idxCtx, &qdrant.CreateFieldIndexCollection{
+		CollectionName: collectionName,
+		FieldName:      "symbol",
+		FieldType:      &fieldType,
+	})
+	if err != nil {
+		log.Printf("ℹ️ symbol index create (maybe exists): %v", err)
+	}
+	// date
+	idxCtx2, cancelIdx2 := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelIdx2()
+	_, err = s.qdrantClient.CreateFieldIndex(idxCtx2, &qdrant.CreateFieldIndexCollection{
+		CollectionName: collectionName,
+		FieldName:      "date",
+		FieldType:      &fieldType,
+	})
+	if err != nil {
+		log.Printf("ℹ️ date index create (maybe exists): %v", err)
+	}
+	return nil
+}
+
+// GetLatestEconomicDate returns the max date (YYYY-MM-DD) stored for a symbol.
+func (s *VectorStoreService) GetLatestEconomicDate(ctx context.Context, symbol string) (string, error) {
+	collectionName := "economic_daily_summaries"
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return "", err
+	}
+
+	// Build filter: type == economic_daily AND symbol == symbol
+	filter := &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			{
+				ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{
+					Key:   "type",
+					Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: "economic_daily"}},
+				}},
+			},
+			{
+				ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{
+					Key:   "symbol",
+					Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: symbol}},
+				}},
+			},
+		},
+	}
+
+	limit := uint32(10000)
+	withPayload := true
+	scrollCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	res, err := s.qdrantClient.Scroll(scrollCtx, &qdrant.ScrollPoints{
+		CollectionName: collectionName,
+		Filter:         filter,
+		Limit:          &limit,
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to scroll economic points: %w", err)
+	}
+	latest := ""
+	for _, p := range res.GetResult() {
+		d := getStringFromPayload(p.Payload, "date")
+		if d > latest { // lexicographical works for YYYY-MM-DD
+			latest = d
+		}
+	}
+	return latest, nil
+}
+
+// GetEconomicSeries fetches economic daily series for a symbol between start and end (inclusive), sorted by date asc.
+func (s *VectorStoreService) GetEconomicSeries(ctx context.Context, symbol string, start, end time.Time) ([]struct{ Date string; Value float64 }, error) {
+	collectionName := "economic_daily_summaries"
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return nil, err
+	}
+
+	// Filter by type and symbol; we'll post-filter dates client-side
+	filter := &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "type", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: "economic_daily"}}}}},
+			{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "symbol", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: symbol}}}}},
+		},
+	}
+	limit := uint32(100000)
+	withPayload := true
+	scrollCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	res, err := s.qdrantClient.Scroll(scrollCtx, &qdrant.ScrollPoints{
+		CollectionName: collectionName,
+		Filter:         filter,
+		Limit:          &limit,
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to scroll economic series: %w", err)
+	}
+	startStr := start.Format("2006-01-02")
+	endStr := end.Format("2006-01-02")
+	out := make([]struct{ Date string; Value float64 }, 0, len(res.GetResult()))
+	for _, p := range res.GetResult() {
+		if p.Payload == nil { continue }
+		d := getStringFromPayload(p.Payload, "date")
+		if d == "" { continue }
+		if d < startStr || d > endStr { continue }
+		var val float64
+		if v := p.Payload["value"]; v != nil {
+			val = v.GetDoubleValue()
+		}
+		out = append(out, struct{ Date string; Value float64 }{Date: d, Value: val})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Date < out[j].Date })
+	return out, nil
+}
+
+// StoreEconomicDailyBatch stores daily economic points for a symbol, embedding textual summaries.
+func (s *VectorStoreService) StoreEconomicDailyBatch(ctx context.Context, symbol string, points []struct {
+	Date  string
+	Value float64
+}) error {
+	collectionName := "economic_daily_summaries"
+	// Ensure collection with a short timeout
+	ensureCtx, cancelEnsure := context.WithTimeout(ctx, 15*time.Second)
+	defer cancelEnsure()
+	if err := s.EnsureEconomicCollection(ensureCtx); err != nil {
+		return err
+	}
+
+	// Build points
+	qpoints := make([]*qdrant.PointStruct, 0, len(points))
+	// Economic daily summaries don't need semantic search now; avoid slow embeddings.
+	// Use a fixed zero vector with the known dimension (1536) to satisfy Qdrant schema.
+	zeroVec := make([]float32, 1536)
+	for _, pt := range points {
+		text := fmt.Sprintf("%s %s Close=%.4f", pt.Date, symbol, pt.Value)
+		payload := map[string]*qdrant.Value{
+			"type":   {Kind: &qdrant.Value_StringValue{StringValue: "economic_daily"}},
+			"symbol": {Kind: &qdrant.Value_StringValue{StringValue: symbol}},
+			"date":   {Kind: &qdrant.Value_StringValue{StringValue: pt.Date}},
+			"value":  {Kind: &qdrant.Value_DoubleValue{DoubleValue: pt.Value}},
+			"text":   {Kind: &qdrant.Value_StringValue{StringValue: text}},
+		}
+		// use deterministic UUID (v5/SHA1) derived from "symbol:date" for idempotency
+		rawID := fmt.Sprintf("%s:%s", symbol, pt.Date)
+		idStr := uuid.NewSHA1(uuid.NameSpaceURL, []byte(rawID)).String()
+		qpoints = append(qpoints, &qdrant.PointStruct{
+			Id:      &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: idStr}},
+			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: zeroVec}}},
+			Payload: payload,
+		})
+	}
+	if len(qpoints) == 0 {
+		return nil
+	}
+	wait := true
+	// Bound upsert to avoid long hangs
+	upsertCtx, cancelUpsert := context.WithTimeout(ctx, 20*time.Second)
+	defer cancelUpsert()
+	_, err := s.qdrantClient.Upsert(upsertCtx, &qdrant.UpsertPoints{
+		CollectionName: collectionName,
+		Points:         qpoints,
+		Wait:           &wait,
+	})
+	if err != nil {
+		return fmt.Errorf("upsert economic points failed: %w", err)
+	}
+	log.Printf("✅ Stored %d economic points for %s", len(qpoints), symbol)
+	return nil
+}
+
+// EnsureSalesCollection ensures the sales_daily_series collection exists and indexes are set.
+func (s *VectorStoreService) EnsureSalesCollection(ctx context.Context) error {
+	collectionName := "sales_daily_series"
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return err
+	}
+	fieldType := qdrant.FieldType_FieldTypeKeyword
+	// product_id
+	ctx1, cancel1 := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel1()
+	if _, err := s.qdrantClient.CreateFieldIndex(ctx1, &qdrant.CreateFieldIndexCollection{
+		CollectionName: collectionName,
+		FieldName:      "product_id",
+		FieldType:      &fieldType,
+	}); err != nil {
+		log.Printf("ℹ️ product_id index create (maybe exists): %v", err)
+	}
+	// date
+	ctx2, cancel2 := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel2()
+	if _, err := s.qdrantClient.CreateFieldIndex(ctx2, &qdrant.CreateFieldIndexCollection{
+		CollectionName: collectionName,
+		FieldName:      "date",
+		FieldType:      &fieldType,
+	}); err != nil {
+		log.Printf("ℹ️ date index create (maybe exists): %v", err)
+	}
+	return nil
+}
+
+// GetLatestSalesDate returns the max date (YYYY-MM-DD) stored for a product.
+func (s *VectorStoreService) GetLatestSalesDate(ctx context.Context, productID string) (string, error) {
+	collectionName := "sales_daily_series"
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return "", err
+	}
+	filter := &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "type", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: "sales_daily"}}}}},
+			{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "product_id", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: productID}}}}},
+		},
+	}
+	limit := uint32(100000)
+	withPayload := true
+	ctxScroll, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	res, err := s.qdrantClient.Scroll(ctxScroll, &qdrant.ScrollPoints{
+		CollectionName: collectionName,
+		Filter:         filter,
+		Limit:          &limit,
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to scroll sales points: %w", err)
+	}
+	latest := ""
+	for _, p := range res.GetResult() {
+		d := getStringFromPayload(p.Payload, "date")
+		if d > latest { latest = d }
+	}
+	return latest, nil
+}
+
+// StoreSalesDailyBatch stores daily sales points for a product.
+func (s *VectorStoreService) StoreSalesDailyBatch(ctx context.Context, productID string, points []struct{ Date string; Sales float64 }) error {
+	collectionName := "sales_daily_series"
+	// Ensure collection with timeout
+	ectx, cancelE := context.WithTimeout(ctx, 15*time.Second)
+	defer cancelE()
+	if err := s.EnsureSalesCollection(ectx); err != nil { return err }
+
+	// Prepare points with zero vector
+	zeroVec := make([]float32, 1536)
+	qpoints := make([]*qdrant.PointStruct, 0, len(points))
+	for _, pt := range points {
+		text := fmt.Sprintf("%s %s Sales=%.4f", pt.Date, productID, pt.Sales)
+		payload := map[string]*qdrant.Value{
+			"type":       {Kind: &qdrant.Value_StringValue{StringValue: "sales_daily"}},
+			"product_id": {Kind: &qdrant.Value_StringValue{StringValue: productID}},
+			"date":       {Kind: &qdrant.Value_StringValue{StringValue: pt.Date}},
+			"sales":      {Kind: &qdrant.Value_DoubleValue{DoubleValue: pt.Sales}},
+			"text":       {Kind: &qdrant.Value_StringValue{StringValue: text}},
+		}
+		rawID := fmt.Sprintf("%s:%s", productID, pt.Date)
+		idStr := uuid.NewSHA1(uuid.NameSpaceURL, []byte(rawID)).String()
+		qpoints = append(qpoints, &qdrant.PointStruct{
+			Id:      &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: idStr}},
+			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: zeroVec}}},
+			Payload: payload,
+		})
+	}
+	if len(qpoints) == 0 { return nil }
+	wait := true
+	uctx, cancelU := context.WithTimeout(ctx, 20*time.Second)
+	defer cancelU()
+	if _, err := s.qdrantClient.Upsert(uctx, &qdrant.UpsertPoints{CollectionName: collectionName, Points: qpoints, Wait: &wait}); err != nil {
+		return fmt.Errorf("upsert sales points failed: %w", err)
+	}
+	log.Printf("✅ Stored %d sales points for %s", len(qpoints), productID)
+	return nil
+}
+
+// GetSalesSeries fetches sales daily series for a product between start and end.
+func (s *VectorStoreService) GetSalesSeries(ctx context.Context, productID string, start, end time.Time) ([]struct{ Date string; Sales float64 }, error) {
+	collectionName := "sales_daily_series"
+	if err := s.ensureCollection(ctx, collectionName); err != nil { return nil, err }
+	filter := &qdrant.Filter{
+		Must: []*qdrant.Condition{
+			{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "type", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: "sales_daily"}}}}},
+			{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "product_id", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: productID}}}}},
+		},
+	}
+	limit := uint32(100000)
+	withPayload := true
+	sctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	res, err := s.qdrantClient.Scroll(sctx, &qdrant.ScrollPoints{
+		CollectionName: collectionName,
+		Filter:         filter,
+		Limit:          &limit,
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
+	})
+	if err != nil { return nil, fmt.Errorf("failed to scroll sales series: %w", err) }
+	startStr := start.Format("2006-01-02")
+	endStr := end.Format("2006-01-02")
+	out := make([]struct{ Date string; Sales float64 }, 0, len(res.GetResult()))
+	for _, p := range res.GetResult() {
+		if p.Payload == nil { continue }
+		d := getStringFromPayload(p.Payload, "date")
+		if d == "" || d < startStr || d > endStr { continue }
+		var v float64
+		if pv := p.Payload["sales"]; pv != nil { v = pv.GetDoubleValue() }
+		out = append(out, struct{ Date string; Sales float64 }{Date: d, Sales: v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Date < out[j].Date })
+	return out, nil
+}
+
 // RecreateCollection コレクションを削除して再作成（全データ削除）
 func (s *VectorStoreService) RecreateCollection(ctx context.Context, collectionName string) error {
 	// コレクションを削除

@@ -49,6 +49,7 @@ func main() {
 	weatherHandler := handlers.NewWeatherHandler()
 	demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
 	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), demandForecastHandler.GetDemandForecastService(), vectorStoreService)
+	economicHandler := handlers.NewEconomicHandler(vectorStoreService)
 
 	// 認証ミドルウェア
 	authMiddleware := func(apiKey string) gin.HandlerFunc {
@@ -152,6 +153,18 @@ func main() {
 			ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)                   // 回答削除API
 			ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses)                  // 全回答削除API
 			ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)                     // 未回答の異常を取得
+		}
+
+		// 経済/金融データAPI（CSV疑似yfinance）
+		econ := v1.Group("/econ")
+		{
+			econ.GET("/series", economicHandler.GetSeries)
+			econ.GET("/returns", economicHandler.GetReturns)
+			econ.POST("/register", economicHandler.RegisterSymbol)
+			econ.POST("/import", economicHandler.ImportCSV)
+			econ.POST("/lagged-correlation", economicHandler.AnalyzeLaggedCorrelation)
+			econ.POST("/sales/import", economicHandler.ImportSales)
+			econ.POST("/sales/lagged-correlation", economicHandler.AnalyzeProductEconLagged)
 		}
 	} // サーバー起動
 	log.Println("Starting HUNT Chat-API server on :8080")
