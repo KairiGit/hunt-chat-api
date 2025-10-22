@@ -27,12 +27,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200`}
-      >
+    <html lang="ja" className="h-full">
+      <body className={`${geistSans.variable} ${geistMono.variable} h-full antialiased overflow-hidden`}>
         <AppProvider>
-          <div className="flex min-h-screen">
+          <div className="flex h-full">
             {/* Sidebar */}
             <aside className="w-64 bg-white dark:bg-gray-800 shadow-md flex flex-col">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -59,7 +57,7 @@ export default function RootLayout({
                     ダッシュボード
                   </Link>
                   <Link href="/product-analysis" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
-                    <span className="mr-2">�</span>
+                    <span className="mr-2">📦</span>
                     製品別分析
                   </Link>
                   <Link href="/analysis" className="flex items-center px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors">
@@ -109,7 +107,7 @@ export default function RootLayout({
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 p-4">
+            <main className="flex-1 overflow-y-auto p-6">
               {children}
             </main>
           </div>
