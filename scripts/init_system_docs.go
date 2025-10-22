@@ -48,6 +48,8 @@ func main() {
 		"API_MANUAL.md",
 		"FILE_FORMAT_GUIDE.md",
 		"AI_LEARNING_GUIDE.md",
+		"AI_QUESTION_STRATEGY.md",
+		"AI_QUESTION_IMPLEMENTATION.md",
 		"IMPLEMENTATION_SUMMARY.md",
 		"CHAT_HISTORY_RAG.md",
 		"WEEKLY_ANALYSIS_GUIDE.md",
@@ -137,7 +139,7 @@ func getDocCategory(filename string) string {
 	switch filename {
 	case "API_MANUAL.md", "FILE_FORMAT_GUIDE.md":
 		return "api"
-	case "AI_LEARNING_GUIDE.md", "CHAT_HISTORY_RAG.md":
+	case "AI_LEARNING_GUIDE.md", "CHAT_HISTORY_RAG.md", "AI_QUESTION_STRATEGY.md", "AI_QUESTION_IMPLEMENTATION.md":
 		return "ai"
 	case "要件定義.md", "ワークフロー.md", "UML.md":
 		return "design"
@@ -157,6 +159,8 @@ func getDocDescription(filename string) string {
 		"API_MANUAL.md":                         "API利用マニュアル - エンドポイントと使用方法",
 		"FILE_FORMAT_GUIDE.md":                  "ファイルアップロード形式ガイド - 必須列と形式の詳細",
 		"AI_LEARNING_GUIDE.md":                  "AI学習システムのガイド - 回答保存と洞察取得",
+		"AI_QUESTION_STRATEGY.md":               "AI質問力向上戦略ガイド - 多層質問、シナリオベース、継続質問の設計",
+		"AI_QUESTION_IMPLEMENTATION.md":         "AI質問機能の実装サンプル - 強化質問、仮説生成、回答品質分析のコード",
 		"IMPLEMENTATION_SUMMARY.md":             "実装概要 - システムアーキテクチャと技術スタック",
 		"CHAT_HISTORY_RAG.md":                   "チャット履歴RAG機能の説明",
 		"WEEKLY_ANALYSIS_GUIDE.md":              "週次分析機能の使い方",

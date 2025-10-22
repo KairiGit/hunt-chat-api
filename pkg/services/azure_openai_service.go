@@ -487,3 +487,351 @@ func (aos *AzureOpenAIService) EvaluateAnswerCompleteness(
 
 	return &evaluation, nil
 }
+
+// GenerateEnhancedQuestion は、コンテキストと仮説を活用した強化質問を生成
+func (aos *AzureOpenAIService) GenerateEnhancedQuestion(
+	anomaly models.AnomalyDetection,
+	pastSimilarAnomalies []models.AnomalyResponse,
+	userHistory []models.AnomalyResponse,
+	weatherContext string,
+	industryTrends string,
+) (*models.EnhancedQuestion, error) {
+
+	systemPrompt := `あなたは需要予測の専門家です。以下の情報を総合的に分析し、
+ユーザーから最も価値のある情報を引き出す質問を生成してください。
+
+【質問設計の原則】
+1. 5W2H（What/Why/How/When/Where/Who/How Much）を網羅
+2. 複数の仮説を立て、検証する質問を含める
+3. 過去の類似ケースと比較し、パターンを特定する質問
+4. 具体的な数値・固有名詞を引き出す
+5. 予測モデルの改善に直結する情報を得る
+6. データで既に分かっていることは尋ねない
+
+【質問の構造】
+- まず「データから見えていること」を3-5項目で箇条書き
+- 過去の類似ケースがあれば参照
+- 最低3つの仮説を立てる（信頼度付き）
+- 各仮説を検証する具体的質問を用意
+- 次の質問計画も示す
+
+【出力形式】必ずこのJSON形式で返してください：
+{
+  "primary_question": "メインの質問文（状況説明+質問）",
+  "context_summary": [
+    "データポイント1",
+    "データポイント2",
+    "データポイント3"
+  ],
+  "past_patterns": "過去の類似ケースの説明（なければ「該当なし」）",
+  "hypotheses": [
+    {
+      "id": "H1",
+      "category": "internal",
+      "title": "仮説のタイトル",
+      "description": "詳細な説明",
+      "confidence": 0.75,
+      "data_evidence": "この仮説を支持するデータ",
+      "verification_question": "検証質問",
+      "choices": ["選択肢1", "選択肢2", "選択肢3", "選択肢4", "その他（自由記述）"],
+      "expected_pattern": "期待される回答パターン"
+    }
+  ],
+  "follow_up_plan": "次のステップで聞くべき内容"
+}`
+
+	// 過去の類似異常をフォーマット
+	pastPatternsText := "該当なし"
+	if len(pastSimilarAnomalies) > 0 {
+		pastPatternsText = ""
+		for i, past := range pastSimilarAnomalies[:min(3, len(pastSimilarAnomalies))] {
+			pastPatternsText += fmt.Sprintf("\n%d. 日付: %s, 製品: %s, 原因: %s, 影響: %s",
+				i+1, past.AnomalyDate, past.ProductID, past.Answer, past.Impact)
+		}
+	}
+
+	// ユーザー履歴をフォーマット
+	userHistoryText := "初回の質問です"
+	if len(userHistory) > 0 {
+		userHistoryText = "このユーザーの過去の回答傾向:\n"
+		tagCounts := make(map[string]int)
+		for _, hist := range userHistory {
+			for _, tag := range hist.Tags {
+				tagCounts[tag]++
+			}
+		}
+		for tag, count := range tagCounts {
+			userHistoryText += fmt.Sprintf("- %s: %d回\n", tag, count)
+		}
+	}
+
+	userPrompt := fmt.Sprintf(`
+【異常データ】
+- 日付: %s
+- 製品ID: %s
+- 製品名: %s
+- 実績値: %.2f
+- 予測値: %.2f
+- 偏差: %.1f%%
+- 異常タイプ: %s
+- 深刻度: %s
+
+【過去の類似異常】%s
+
+【このユーザーの回答傾向】
+%s
+
+【気象コンテキスト】
+%s
+
+【業界トレンド・その他の背景】
+%s
+
+上記を総合的に分析し、JSON形式で強化された質問を生成してください。`,
+		anomaly.Date,
+		anomaly.ProductID,
+		anomaly.ProductName,
+		anomaly.ActualValue,
+		anomaly.ExpectedValue,
+		anomaly.Deviation,
+		anomaly.AnomalyType,
+		anomaly.Severity,
+		pastPatternsText,
+		userHistoryText,
+		weatherContext,
+		industryTrends,
+	)
+
+	messages := []ChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+
+	resp, err := aos.CreateChatCompletion(messages, 2000, 0.7)
+	if err != nil {
+		return nil, fmt.Errorf("強化質問の生成に失敗しました: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("AIから回答が得られませんでした")
+	}
+
+	content := resp.Choices[0].Message.Content
+
+	// JSONを抽出
+	jsonContent := content
+	if strings.Contains(content, "```json") {
+		start := strings.Index(content, "```json") + 7
+		end := strings.Index(content[start:], "```")
+		if end > 0 {
+			jsonContent = content[start : start+end]
+		}
+	} else if strings.Contains(content, "```") {
+		start := strings.Index(content, "```") + 3
+		end := strings.Index(content[start:], "```")
+		if end > 0 {
+			jsonContent = content[start : start+end]
+		}
+	}
+
+	jsonContent = strings.TrimSpace(jsonContent)
+
+	// JSONをパース
+	var enhancedQuestion models.EnhancedQuestion
+	if err := json.Unmarshal([]byte(jsonContent), &enhancedQuestion); err != nil {
+		return nil, fmt.Errorf("AIの回答JSON解析に失敗しました: %w\nContent: %s", err, content)
+	}
+
+	return &enhancedQuestion, nil
+}
+
+// GenerateScenarioQuestions は複数のシナリオ仮説を生成
+func (aos *AzureOpenAIService) GenerateScenarioQuestions(
+	anomaly models.AnomalyDetection,
+	dataContext string,
+) ([]models.ScenarioQuestion, error) {
+
+	systemPrompt := `あなたは需要予測アナリストです。
+異常データから複数の「もっともらしいシナリオ（仮説）」を生成し、
+それぞれを検証する質問を作成してください。
+
+【シナリオ生成の原則】
+1. 最低3つ、最大5つの仮説を立てる
+2. 各仮説に「信頼度スコア」を付与（データの裏付けの強さ: 0.0-1.0）
+3. 仮説同士は排他的でなくてOK（複数が同時に成り立つこともある）
+4. 各仮説を検証するための具体的質問を2-3個用意
+
+【シナリオの分類】
+- internal: 自社のアクション（キャンペーン、価格変更、在庫戦略、人員配置）
+- external: 市場・競合（競合の動き、業界トレンド、規制変更、M&A）
+- environmental: 環境要因（天候、災害、社会イベント、パンデミック）
+- customer: 顧客行動（需要の本質的変化、トレンドシフト、ライフスタイル変化）
+
+【出力形式】必ずこのJSON形式で返してください：
+{
+  "scenarios": [
+    {
+      "scenario_id": "S1",
+      "category": "internal",
+      "title": "シナリオのタイトル（30文字以内）",
+      "description": "詳細な説明（100-200文字）",
+      "confidence": 0.72,
+      "data_evidence": "このシナリオを支持するデータの説明",
+      "verification_questions": [
+        {
+          "question": "検証質問1",
+          "choices": ["選択肢1", "選択肢2", "選択肢3", "その他"],
+          "question_type": "single_choice",
+          "expected_value": "選択肢1"
+        }
+      ],
+      "related_scenarios": ["S2", "S3"]
+    }
+  ]
+}`
+
+	userPrompt := fmt.Sprintf(`
+【異常データ】
+- 日付: %s
+- 製品ID: %s
+- 製品名: %s
+- 実績値: %.2f
+- 予測値: %.2f
+- 偏差: %.1f%%
+- 異常タイプ: %s
+- 深刻度: %s
+
+【追加のデータコンテキスト】
+%s
+
+上記を分析し、複数のシナリオ仮説をJSON形式で生成してください。`,
+		anomaly.Date,
+		anomaly.ProductID,
+		anomaly.ProductName,
+		anomaly.ActualValue,
+		anomaly.ExpectedValue,
+		anomaly.Deviation,
+		anomaly.AnomalyType,
+		anomaly.Severity,
+		dataContext,
+	)
+
+	messages := []ChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+
+	resp, err := aos.CreateChatCompletion(messages, 2000, 0.7)
+	if err != nil {
+		return nil, fmt.Errorf("シナリオ質問の生成に失敗しました: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("AIから回答が得られませんでした")
+	}
+
+	content := resp.Choices[0].Message.Content
+
+	// JSONを抽出
+	jsonContent := content
+	if strings.Contains(content, "```json") {
+		start := strings.Index(content, "```json") + 7
+		end := strings.Index(content[start:], "```")
+		if end > 0 {
+			jsonContent = content[start : start+end]
+		}
+	}
+	jsonContent = strings.TrimSpace(jsonContent)
+
+	// JSONをパース
+	var result struct {
+		Scenarios []models.ScenarioQuestion `json:"scenarios"`
+	}
+	if err := json.Unmarshal([]byte(jsonContent), &result); err != nil {
+		return nil, fmt.Errorf("シナリオJSON解析に失敗しました: %w\nContent: %s", err, content)
+	}
+
+	return result.Scenarios, nil
+}
+
+// AnalyzeAnswerQuality は回答の品質を分析
+func (aos *AzureOpenAIService) AnalyzeAnswerQuality(
+	question string,
+	answer string,
+) (*models.AnswerAnalysis, error) {
+
+	systemPrompt := `あなたは回答分析の専門家です。
+ユーザーの回答を分析し、以下の観点で評価してください：
+
+1. 具体性スコア（0-100）: 固有名詞、数値、具体的な事実がどれだけ含まれているか
+2. 抽出されたエンティティ: 人名、組織名、場所、日付、数値、製品名など
+3. 重要なフレーズ: キーワードとなるフレーズ（3-5個）
+4. センチメント: positive（好影響）/neutral/negative（悪影響）
+5. 実行可能性: この情報から具体的なアクションが取れるか
+6. 予測価値: 予測モデルの改善にどれだけ貢献するか（0-100）
+
+【出力形式】必ずこのJSON形式で返してください：
+{
+  "specificity_score": 75,
+  "extracted_entities": [
+    {"type": "organization", "value": "A社", "context": "競合他社"},
+    {"type": "number", "value": "30", "context": "割引率30%"}
+  ],
+  "key_phrases": ["価格改定", "新商品投入", "在庫処分"],
+  "sentiment": "positive",
+  "actionable": true,
+  "predictive_value": 80
+}`
+
+	userPrompt := fmt.Sprintf(`
+【質問】
+%s
+
+【ユーザーの回答】
+%s
+
+上記の回答を分析し、JSON形式で結果を返してください。`,
+		question,
+		answer,
+	)
+
+	messages := []ChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+
+	resp, err := aos.CreateChatCompletion(messages, 1000, 0.5)
+	if err != nil {
+		return nil, fmt.Errorf("回答分析に失敗しました: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("AIから回答が得られませんでした")
+	}
+
+	content := resp.Choices[0].Message.Content
+	jsonContent := content
+	if strings.Contains(content, "```json") {
+		start := strings.Index(content, "```json") + 7
+		end := strings.Index(content[start:], "```")
+		if end > 0 {
+			jsonContent = content[start : start+end]
+		}
+	}
+	jsonContent = strings.TrimSpace(jsonContent)
+
+	var analysis models.AnswerAnalysis
+	if err := json.Unmarshal([]byte(jsonContent), &analysis); err != nil {
+		return nil, fmt.Errorf("分析結果のJSON解析に失敗しました: %w\nContent: %s", err, content)
+	}
+
+	return &analysis, nil
+}
+
+// min は2つの整数の小さい方を返す
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
