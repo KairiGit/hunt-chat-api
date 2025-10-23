@@ -106,17 +106,38 @@ func LoadSystemPrompt() (*SystemPromptConfig, error) {
 		return cachedSystemPrompt, nil
 	}
 
-	data, err := os.ReadFile("configs/system_prompt.yaml")
+	// 複数のパスを試行（ローカル開発、Vercel、Dockerなど異なる環境に対応）
+	possiblePaths := []string{
+		"configs/system_prompt.yaml",
+		"./configs/system_prompt.yaml",
+		"../configs/system_prompt.yaml",
+		"/var/task/configs/system_prompt.yaml", // Vercel/AWS Lambda
+		"/app/configs/system_prompt.yaml",      // Docker
+	}
+
+	var data []byte
+	var err error
+	var loadedPath string
+
+	for _, path := range possiblePaths {
+		data, err = os.ReadFile(path)
+		if err == nil {
+			loadedPath = path
+			break
+		}
+	}
+
 	if err != nil {
-		return nil, fmt.Errorf("システムプロンプト設定ファイルの読み込みに失敗: %w", err)
+		return nil, fmt.Errorf("システムプロンプト設定ファイルの読み込みに失敗（試行したパス: %v）: %w", possiblePaths, err)
 	}
 
 	var config SystemPromptConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("YAMLのパースに失敗: %w", err)
+		return nil, fmt.Errorf("YAMLのパースに失敗（ファイル: %s）: %w", loadedPath, err)
 	}
 
 	cachedSystemPrompt = &config
+	fmt.Printf("✅ システムプロンプト設定を読み込みました: %s\n", loadedPath)
 	return cachedSystemPrompt, nil
 }
 

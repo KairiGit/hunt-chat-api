@@ -12,6 +12,7 @@
         "includeFiles": [
           "pkg/**/*.go",
           "configs/**/*.go",
+          "configs/**/*.yaml",
           "go.mod",
           "go.sum"
         ]
