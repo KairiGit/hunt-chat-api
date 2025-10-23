@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from 'next/link';
+import Image from 'next/image';
 import "./globals.css";
 
 import { AppProvider } from '@/contexts/AppContext';
@@ -33,9 +34,8 @@ export default function RootLayout({
           <div className="flex h-full">
             {/* Sidebar */}
             <aside className="w-64 bg-white dark:bg-gray-800 shadow-md flex flex-col">
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">🏭 HUNT</h1>
-                <p className="text-xs text-gray-500 mt-1">需要予測システム</p>
+              <div className="p-4 flex justify-center items-center border-b border-gray-200 dark:border-gray-700">
+                <Image src="/img/HUNT-logo.jpeg" alt="HUNT logo" width={180} height={50} priority />
               </div>
               
               <nav className="flex-1 p-4 space-y-6">
