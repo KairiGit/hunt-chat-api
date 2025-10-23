@@ -459,22 +459,40 @@ npm test
 
 ## ドキュメント
 
-| ドキュメント | 説明 |
-|-------------|------|
-| [API_MANUAL.md](./API_MANUAL.md) | API仕様書 |
-| [IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md) | 実装概要 |
-| [UML.md](./UML.md) | **UML図・シーケンス図・アーキテクチャ図** 🆕 |
-| [RAG_SYSTEM_GUIDE.md](./RAG_SYSTEM_GUIDE.md) | RAGシステムガイド |
-| [AI_LEARNING_GUIDE.md](./AI_LEARNING_GUIDE.md) | AI学習機能ガイド |
-| [WEEKLY_ANALYSIS_GUIDE.md](./WEEKLY_ANALYSIS_GUIDE.md) | 製品別分析ガイド（旧：週次分析） |
-| [DATA_AGGREGATION_GUIDE.md](./DATA_AGGREGATION_GUIDE.md) | データ集約分析ガイド（日次・週次・月次） |
-| [ANOMALY_DETECTION_WEEKLY_AGGREGATION.md](./ANOMALY_DETECTION_WEEKLY_AGGREGATION.md) | 異常検知の週次集約対応 |
-| [ANOMALY_DISPLAY_IMPROVEMENT.md](./ANOMALY_DISPLAY_IMPROVEMENT.md) | 異常検知の表示改善（製品名・日付フォーマット） |
-| [PERFORMANCE_OPTIMIZATION_GUIDE.md](./PERFORMANCE_OPTIMIZATION_GUIDE.md) | **パフォーマンス最適化ガイド**（Phase 1完了） ✅ |
-| [ASYNC_IMPLEMENTATION_COMPLETE.md](./ASYNC_IMPLEMENTATION_COMPLETE.md) | **非同期化実装完了レポート**（70%高速化達成） 🆕 |
-| [PROGRESS_BAR_IMPLEMENTATION.md](./PROGRESS_BAR_IMPLEMENTATION.md) | 進捗バー実装サマリー |
-| [FILE_FORMAT_GUIDE.md](./FILE_FORMAT_GUIDE.md) | ファイル形式ガイド |
-| [TROUBLESHOOTING_AND_BEST_PRACTICES.md](./TROUBLESHOOTING_AND_BEST_PRACTICES.md) | トラブルシューティング |
+📚 **[完全なドキュメント一覧はこちら](./docs/README.md)**
+
+### クイックリンク
+
+#### 📖 はじめに
+- [API仕様書](./docs/api/API_MANUAL.md) - エンドポイント一覧、リクエスト/レスポンス形式
+- [アーキテクチャ図](./docs/architecture/UML.md) - UML図・シーケンス図
+- [ファイル形式ガイド](./docs/guides/FILE_FORMAT_GUIDE.md) - CSV/Excel形式の詳細
+
+#### 🚀 主要機能
+- [RAGシステムガイド](./docs/guides/RAG_SYSTEM_GUIDE.md) - 検索拡張生成の仕組み
+- [AI学習ガイド](./docs/guides/AI_LEARNING_GUIDE.md) - AI深掘り質問機能
+- [データ集約分析](./docs/guides/DATA_AGGREGATION_GUIDE.md) - 日次・週次・月次分析
+- [経済データ相関分析](./docs/implementation/ECONOMIC_CORRELATION_IMPLEMENTATION.md) - 日経平均、為替、原油価格
+
+#### 🔧 実装・最適化
+- [最終実装サマリー](./docs/implementation/FINAL_IMPLEMENTATION_SUMMARY.md) - 相関分析最適化（上位3件表示）
+- [非同期化完了](./docs/implementation/ASYNC_IMPLEMENTATION_COMPLETE.md) - 70%高速化達成 🆕
+- [パフォーマンス最適化](./docs/guides/PERFORMANCE_OPTIMIZATION_GUIDE.md) - Phase 1完了 ✅
+
+#### 🆘 トラブルシューティング
+- [トラブルシューティング](./docs/guides/TROUBLESHOOTING_AND_BEST_PRACTICES.md) - よくある問題と解決策
+- [Vercelデバッグ](./docs/guides/VERCEL_DEBUGGING_GUIDE.md) - デプロイ時の問題
+
+### ドキュメントカテゴリ
+
+| カテゴリ | 説明 | リンク |
+|---------|------|--------|
+| 📡 **API** | API仕様、エンドポイント | [docs/api/](./docs/api/) |
+| 🏗️ **アーキテクチャ** | 設計図、UML、診断 | [docs/architecture/](./docs/architecture/) |
+| 🔧 **実装** | 実装詳細、変更履歴 | [docs/implementation/](./docs/implementation/) |
+| 📖 **ガイド** | 使い方、ベストプラクティス | [docs/guides/](./docs/guides/) |
+| ✨ **機能** | 各機能の詳細設計 | [docs/features/](./docs/features/) |
+| 📋 **プロジェクト** | 要件定義、進捗管理 | [docs/project/](./docs/project/) |
 
 ---
 

@@ -54,22 +54,18 @@ func setupApp() *gin.Engine {
 			// The service will be nil, handlers should handle this.
 		}
 
-	// ハンドラーの初期化
-	weatherHandler := handlers.NewWeatherHandler()
-	demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
-	
-	// 経済データサービスの初期化（Vercel環境用）
-	economicSymbolMapping := map[string]string{
-		"NIKKEI": "moc/nikkei_daily.csv",
-	}
-	economicService, err := services.NewEconomicService(economicSymbolMapping)
-	if err != nil {
-		log.Printf("WARNING: Failed to initialize EconomicService: %v", err)
-		economicService = nil // エラーでもnilで継続
-	}
-	
-	economicHandler := handlers.NewEconomicHandler(vectorStoreService)
-	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), economicService, demandForecastHandler.GetDemandForecastService(), vectorStoreService)		// 認証ミドルウェア
+		// ハンドラーの初期化
+		weatherHandler := handlers.NewWeatherHandler()
+		demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
+
+		// 経済データサービスの初期化（Vercel環境用）
+		economicSymbolMapping := map[string]string{
+			"NIKKEI": "moc/nikkei_daily.csv",
+		}
+		economicService := services.NewEconomicService(".", economicSymbolMapping)
+
+		economicHandler := handlers.NewEconomicHandler(vectorStoreService)
+		aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), economicService, demandForecastHandler.GetDemandForecastService(), vectorStoreService) // 認証ミドルウェア
 		authMiddleware := func(apiKey string) gin.HandlerFunc {
 			return func(c *gin.Context) {
 				// Vercel環境では一時的に認証をスキップ（デバッグ用）

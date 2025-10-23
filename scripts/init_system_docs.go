@@ -42,21 +42,25 @@ func main() {
 
 	ctx := context.Background()
 
-	// システムドキュメントのリスト
+	// システムドキュメントのリスト（新しいディレクトリ構造に対応）
 	docs := []string{
 		"README.md",
-		"API_MANUAL.md",
-		"FILE_FORMAT_GUIDE.md",
-		"AI_LEARNING_GUIDE.md",
-		"AI_QUESTION_STRATEGY.md",
-		"AI_QUESTION_IMPLEMENTATION.md",
-		"IMPLEMENTATION_SUMMARY.md",
-		"CHAT_HISTORY_RAG.md",
-		"WEEKLY_ANALYSIS_GUIDE.md",
-		"TROUBLESHOOTING_AND_BEST_PRACTICES.md",
-		"要件定義.md",
-		"ワークフロー.md",
-		"UML.md",
+		"docs/api/API_MANUAL.md",
+		"docs/guides/FILE_FORMAT_GUIDE.md",
+		"docs/guides/AI_LEARNING_GUIDE.md",
+		"docs/features/AI_QUESTION_STRATEGY.md",
+		"docs/implementation/AI_QUESTION_IMPLEMENTATION.md",
+		"docs/implementation/IMPLEMENTATION_SUMMARY.md",
+		"docs/implementation/FINAL_IMPLEMENTATION_SUMMARY.md",
+		"docs/implementation/ECONOMIC_CORRELATION_IMPLEMENTATION.md",
+		"docs/features/CHAT_HISTORY_RAG.md",
+		"docs/guides/WEEKLY_ANALYSIS_GUIDE.md",
+		"docs/guides/DATA_AGGREGATION_GUIDE.md",
+		"docs/guides/RAG_SYSTEM_GUIDE.md",
+		"docs/guides/TROUBLESHOOTING_AND_BEST_PRACTICES.md",
+		"docs/architecture/UML.md",
+		"docs/project/要件定義.md",
+		"docs/project/ワークフロー.md",
 	}
 
 	successCount := 0
@@ -74,7 +78,9 @@ func main() {
 		}
 
 		// ドキュメントをベクトルDBに保存
-		collectionName := fmt.Sprintf("system_doc_%s", docName)
+		// コレクション名から "/" を "_" に置換（Qdrantの制約）
+		sanitizedName := strings.ReplaceAll(docName, "/", "_")
+		collectionName := fmt.Sprintf("system_doc_%s", sanitizedName)
 		docText := string(content)
 
 		// 長い文書を分割 (約6000文字ごと、安全マージンを考慮)
@@ -136,38 +142,43 @@ func main() {
 
 // getDocCategory ドキュメントのカテゴリを返す
 func getDocCategory(filename string) string {
-	switch filename {
-	case "API_MANUAL.md", "FILE_FORMAT_GUIDE.md":
+	// 新しいディレクトリ構造に基づいてカテゴリを判定
+	if strings.Contains(filename, "docs/api/") {
 		return "api"
-	case "AI_LEARNING_GUIDE.md", "CHAT_HISTORY_RAG.md", "AI_QUESTION_STRATEGY.md", "AI_QUESTION_IMPLEMENTATION.md":
-		return "ai"
-	case "要件定義.md", "ワークフロー.md", "UML.md":
-		return "design"
-	case "IMPLEMENTATION_SUMMARY.md", "TROUBLESHOOTING_AND_BEST_PRACTICES.md":
-		return "development"
-	case "WEEKLY_ANALYSIS_GUIDE.md":
-		return "usage"
-	default:
-		return "general"
+	} else if strings.Contains(filename, "docs/architecture/") {
+		return "architecture"
+	} else if strings.Contains(filename, "docs/implementation/") {
+		return "implementation"
+	} else if strings.Contains(filename, "docs/guides/") {
+		return "guides"
+	} else if strings.Contains(filename, "docs/features/") {
+		return "features"
+	} else if strings.Contains(filename, "docs/project/") {
+		return "project"
 	}
+	return "general"
 }
 
 // getDocDescription ドキュメントの説明を返す
 func getDocDescription(filename string) string {
 	descriptions := map[string]string{
-		"README.md":                             "プロジェクトの概要とセットアップ手順",
-		"API_MANUAL.md":                         "API利用マニュアル - エンドポイントと使用方法",
-		"FILE_FORMAT_GUIDE.md":                  "ファイルアップロード形式ガイド - 必須列と形式の詳細",
-		"AI_LEARNING_GUIDE.md":                  "AI学習システムのガイド - 回答保存と洞察取得",
-		"AI_QUESTION_STRATEGY.md":               "AI質問力向上戦略ガイド - 多層質問、シナリオベース、継続質問の設計",
-		"AI_QUESTION_IMPLEMENTATION.md":         "AI質問機能の実装サンプル - 強化質問、仮説生成、回答品質分析のコード",
-		"IMPLEMENTATION_SUMMARY.md":             "実装概要 - システムアーキテクチャと技術スタック",
-		"CHAT_HISTORY_RAG.md":                   "チャット履歴RAG機能の説明",
-		"WEEKLY_ANALYSIS_GUIDE.md":              "週次分析機能の使い方",
-		"TROUBLESHOOTING_AND_BEST_PRACTICES.md": "トラブルシューティングとベストプラクティス",
-		"要件定義.md":                               "システムの要件定義書",
-		"ワークフロー.md":                             "システムのワークフロー図",
-		"UML.md":                                "UML図とシステム設計",
+		"README.md":                                                    "プロジェクトの概要とセットアップ手順",
+		"docs/api/API_MANUAL.md":                                       "API利用マニュアル - エンドポイントと使用方法",
+		"docs/guides/FILE_FORMAT_GUIDE.md":                             "ファイルアップロード形式ガイド - 必須列と形式の詳細",
+		"docs/guides/AI_LEARNING_GUIDE.md":                             "AI学習システムのガイド - 回答保存と洞察取得",
+		"docs/features/AI_QUESTION_STRATEGY.md":                        "AI質問力向上戦略ガイド - 多層質問、シナリオベース、継続質問の設計",
+		"docs/implementation/AI_QUESTION_IMPLEMENTATION.md":            "AI質問機能の実装サンプル - 強化質問、仮説生成、回答品質分析のコード",
+		"docs/implementation/IMPLEMENTATION_SUMMARY.md":                "実装概要 - システムアーキテクチャと技術スタック",
+		"docs/implementation/FINAL_IMPLEMENTATION_SUMMARY.md":          "最終実装サマリー - 相関分析最適化とRAG活用",
+		"docs/implementation/ECONOMIC_CORRELATION_IMPLEMENTATION.md":   "経済データ相関分析実装 - 日経平均、為替、原油価格との相関",
+		"docs/features/CHAT_HISTORY_RAG.md":                            "チャット履歴RAG機能の説明",
+		"docs/guides/WEEKLY_ANALYSIS_GUIDE.md":                         "製品別分析機能の使い方（旧：週次分析）",
+		"docs/guides/DATA_AGGREGATION_GUIDE.md":                        "データ集約分析ガイド - 日次・週次・月次分析",
+		"docs/guides/RAG_SYSTEM_GUIDE.md":                              "RAG（検索拡張生成）システムガイド",
+		"docs/guides/TROUBLESHOOTING_AND_BEST_PRACTICES.md":            "トラブルシューティングとベストプラクティス",
+		"docs/architecture/UML.md":                                     "UML図とシステム設計・アーキテクチャ",
+		"docs/project/要件定義.md":                                         "システムの要件定義書",
+		"docs/project/ワークフロー.md":                                       "システムのワークフロー図",
 	}
 
 	if desc, ok := descriptions[filename]; ok {

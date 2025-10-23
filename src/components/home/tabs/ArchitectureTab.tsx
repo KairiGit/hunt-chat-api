@@ -17,7 +17,7 @@ export function ArchitectureTab() {
           システムアーキテクチャ
         </CardTitle>
         <CardDescription>
-          詳細なシーケンス図とフロー図は <a href="https://github.com/KairiGit/hunt-chat-api/blob/main/UML.md" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">
+          詳細なシーケンス図とフロー図は <a href="https://github.com/KairiGit/hunt-chat-api/blob/main/docs/architecture/UML.md" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">
             UML.md <ExternalLink className="h-3 w-3" />
           </a> を参照
         </CardDescription>

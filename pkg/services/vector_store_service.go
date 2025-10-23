@@ -1826,3 +1826,34 @@ func (s *VectorStoreService) GetAnomalyResponseSession(ctx context.Context, sess
 
 	return &session, nil
 }
+
+// ListCollections は、Qdrantのすべてのコレクション名を取得します
+func (v *VectorStoreService) ListCollections(ctx context.Context) ([]string, error) {
+	// コレクション一覧を取得
+	res, err := v.qdrantCollectionsClient.List(ctx, &qdrant.ListCollectionsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("コレクション一覧の取得に失敗: %w", err)
+	}
+
+	// コレクション名を抽出
+	collections := res.GetCollections()
+	names := make([]string, 0, len(collections))
+	for _, collection := range collections {
+		names = append(names, collection.GetName())
+	}
+
+	return names, nil
+}
+
+// DeleteCollection は、指定されたコレクションを削除します
+func (v *VectorStoreService) DeleteCollection(ctx context.Context, collectionName string) error {
+	// コレクションを削除
+	_, err := v.qdrantCollectionsClient.Delete(ctx, &qdrant.DeleteCollection{
+		CollectionName: collectionName,
+	})
+	if err != nil {
+		return fmt.Errorf("コレクション '%s' の削除に失敗: %w", collectionName, err)
+	}
+
+	return nil
+}

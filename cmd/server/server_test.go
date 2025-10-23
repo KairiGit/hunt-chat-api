@@ -62,8 +62,7 @@ func TestApplicationSetup(t *testing.T) {
 	economicSymbolMapping := map[string]string{
 		"NIKKEI": "moc/nikkei_daily.csv",
 	}
-	economicService, _ := services.NewEconomicService(economicSymbolMapping)
-	// テストではエラーを無視してnilでも継続
+	economicService := services.NewEconomicService(".", economicSymbolMapping)
 
 	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), economicService, demandForecastHandler.GetDemandForecastService(), vectorStoreService)
 	assert.NotNil(t, aiHandler, "AIHandler should not be nil")

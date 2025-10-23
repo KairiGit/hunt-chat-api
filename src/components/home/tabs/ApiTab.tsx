@@ -28,19 +28,19 @@ const apiEndpoints = [
 const documentLinks = [
   {
     title: 'UML・アーキテクチャ図',
-    href: 'https://github.com/KairiGit/hunt-chat-api/blob/main/UML.md',
+    href: 'https://github.com/KairiGit/hunt-chat-api/blob/main/docs/architecture/UML.md',
   },
   {
     title: 'API マニュアル',
-    href: 'https://github.com/KairiGit/hunt-chat-api/blob/main/API_MANUAL.md',
+    href: 'https://github.com/KairiGit/hunt-chat-api/blob/main/docs/api/API_MANUAL.md',
   },
   {
     title: 'RAGシステムガイド',
-    href: 'https://github.com/KairiGit/hunt-chat-api/blob/main/RAG_SYSTEM_GUIDE.md',
+    href: 'https://github.com/KairiGit/hunt-chat-api/blob/main/docs/guides/RAG_SYSTEM_GUIDE.md',
   },
   {
     title: '製品別分析ガイド',
-    href: 'https://github.com/KairiGit/hunt-chat-api/blob/main/WEEKLY_ANALYSIS_GUIDE.md',
+    href: 'https://github.com/KairiGit/hunt-chat-api/blob/main/docs/guides/WEEKLY_ANALYSIS_GUIDE.md',
   },
 ];
 
@@ -54,7 +54,7 @@ export function ApiTab() {
             主要APIエンドポイント
           </CardTitle>
           <CardDescription>
-            詳細は <a href="https://github.com/KairiGit/hunt-chat-api/blob/main/API_MANUAL.md" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">
+            詳細は <a href="https://github.com/KairiGit/hunt-chat-api/blob/main/docs/api/API_MANUAL.md" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">
               API_MANUAL.md <ExternalLink className="h-3 w-3" />
             </a> を参照
           </CardDescription>
