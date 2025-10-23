@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 import (
@@ -162,23 +164,23 @@ func getDocCategory(filename string) string {
 // getDocDescription ドキュメントの説明を返す
 func getDocDescription(filename string) string {
 	descriptions := map[string]string{
-		"README.md":                                                    "プロジェクトの概要とセットアップ手順",
-		"docs/api/API_MANUAL.md":                                       "API利用マニュアル - エンドポイントと使用方法",
-		"docs/guides/FILE_FORMAT_GUIDE.md":                             "ファイルアップロード形式ガイド - 必須列と形式の詳細",
-		"docs/guides/AI_LEARNING_GUIDE.md":                             "AI学習システムのガイド - 回答保存と洞察取得",
-		"docs/features/AI_QUESTION_STRATEGY.md":                        "AI質問力向上戦略ガイド - 多層質問、シナリオベース、継続質問の設計",
-		"docs/implementation/AI_QUESTION_IMPLEMENTATION.md":            "AI質問機能の実装サンプル - 強化質問、仮説生成、回答品質分析のコード",
-		"docs/implementation/IMPLEMENTATION_SUMMARY.md":                "実装概要 - システムアーキテクチャと技術スタック",
-		"docs/implementation/FINAL_IMPLEMENTATION_SUMMARY.md":          "最終実装サマリー - 相関分析最適化とRAG活用",
-		"docs/implementation/ECONOMIC_CORRELATION_IMPLEMENTATION.md":   "経済データ相関分析実装 - 日経平均、為替、原油価格との相関",
-		"docs/features/CHAT_HISTORY_RAG.md":                            "チャット履歴RAG機能の説明",
-		"docs/guides/WEEKLY_ANALYSIS_GUIDE.md":                         "製品別分析機能の使い方（旧：週次分析）",
-		"docs/guides/DATA_AGGREGATION_GUIDE.md":                        "データ集約分析ガイド - 日次・週次・月次分析",
-		"docs/guides/RAG_SYSTEM_GUIDE.md":                              "RAG（検索拡張生成）システムガイド",
-		"docs/guides/TROUBLESHOOTING_AND_BEST_PRACTICES.md":            "トラブルシューティングとベストプラクティス",
-		"docs/architecture/UML.md":                                     "UML図とシステム設計・アーキテクチャ",
-		"docs/project/要件定義.md":                                         "システムの要件定義書",
-		"docs/project/ワークフロー.md":                                       "システムのワークフロー図",
+		"README.md":                                                  "プロジェクトの概要とセットアップ手順",
+		"docs/api/API_MANUAL.md":                                     "API利用マニュアル - エンドポイントと使用方法",
+		"docs/guides/FILE_FORMAT_GUIDE.md":                           "ファイルアップロード形式ガイド - 必須列と形式の詳細",
+		"docs/guides/AI_LEARNING_GUIDE.md":                           "AI学習システムのガイド - 回答保存と洞察取得",
+		"docs/features/AI_QUESTION_STRATEGY.md":                      "AI質問力向上戦略ガイド - 多層質問、シナリオベース、継続質問の設計",
+		"docs/implementation/AI_QUESTION_IMPLEMENTATION.md":          "AI質問機能の実装サンプル - 強化質問、仮説生成、回答品質分析のコード",
+		"docs/implementation/IMPLEMENTATION_SUMMARY.md":              "実装概要 - システムアーキテクチャと技術スタック",
+		"docs/implementation/FINAL_IMPLEMENTATION_SUMMARY.md":        "最終実装サマリー - 相関分析最適化とRAG活用",
+		"docs/implementation/ECONOMIC_CORRELATION_IMPLEMENTATION.md": "経済データ相関分析実装 - 日経平均、為替、原油価格との相関",
+		"docs/features/CHAT_HISTORY_RAG.md":                          "チャット履歴RAG機能の説明",
+		"docs/guides/WEEKLY_ANALYSIS_GUIDE.md":                       "製品別分析機能の使い方（旧：週次分析）",
+		"docs/guides/DATA_AGGREGATION_GUIDE.md":                      "データ集約分析ガイド - 日次・週次・月次分析",
+		"docs/guides/RAG_SYSTEM_GUIDE.md":                            "RAG（検索拡張生成）システムガイド",
+		"docs/guides/TROUBLESHOOTING_AND_BEST_PRACTICES.md":          "トラブルシューティングとベストプラクティス",
+		"docs/architecture/UML.md":                                   "UML図とシステム設計・アーキテクチャ",
+		"docs/project/要件定義.md":                                       "システムの要件定義書",
+		"docs/project/ワークフロー.md":                                     "システムのワークフロー図",
 	}
 
 	if desc, ok := descriptions[filename]; ok {
