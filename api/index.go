@@ -165,6 +165,11 @@ func setupApp() *gin.Engine {
 					aiHandler.AnalyzeFile(c)
 				})
 
+				// 売上予測・分析API
+				ai.POST("/predict-sales", aiHandler.PredictSales)             // 売上予測API
+				ai.POST("/forecast-product", aiHandler.ForecastProductDemand) // 製品別需要予測API
+				ai.POST("/analyze-weekly", aiHandler.AnalyzeWeeklySales)      // 週次分析API
+
 				// 異常検知・学習機能API
 				ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)                        // 異常検知実行
 				ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)                           // 異常対応保存 (単数形)
@@ -188,9 +193,17 @@ func setupApp() *gin.Engine {
 			econ := v1.Group("/econ")
 			{
 				econ.GET("/series", economicHandler.GetSeries)
+				econ.GET("/sales/series", economicHandler.GetSalesSeries)
 				econ.GET("/returns", economicHandler.GetReturns)
 				econ.POST("/register", economicHandler.RegisterSymbol)
 				econ.POST("/import", economicHandler.ImportCSV)
+				econ.POST("/lagged-correlation", economicHandler.AnalyzeLaggedCorrelation)
+				econ.POST("/sales/import", economicHandler.ImportSales)
+				econ.POST("/sales/lagged-correlation", economicHandler.AnalyzeProductEconLagged)
+				econ.POST("/sales/lagged-correlation/windowed", economicHandler.AnalyzeWindowedLag)
+				econ.POST("/sales/granger", economicHandler.GrangerCausality)
+				econ.POST("/aggregate", economicHandler.AggregateEconomic)
+				econ.POST("/sales/aggregate", economicHandler.AggregateSales)
 			}
 		}
 
