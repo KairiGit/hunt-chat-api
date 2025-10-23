@@ -23,19 +23,21 @@ import (
 type AIHandler struct {
 	azureOpenAIService    *services.AzureOpenAIService
 	weatherService        *services.WeatherService
+	economicService       *services.EconomicService
 	demandForecastService *services.DemandForecastService
 	vectorStoreService    *services.VectorStoreService
 	statisticsService     *services.StatisticsService
 }
 
 // NewAIHandler 新しいAI統合ハンドラーを作成
-func NewAIHandler(azureOpenAIService *services.AzureOpenAIService, weatherService *services.WeatherService, demandForecastService *services.DemandForecastService, vectorStoreService *services.VectorStoreService) *AIHandler {
+func NewAIHandler(azureOpenAIService *services.AzureOpenAIService, weatherService *services.WeatherService, economicService *services.EconomicService, demandForecastService *services.DemandForecastService, vectorStoreService *services.VectorStoreService) *AIHandler {
 	return &AIHandler{
 		azureOpenAIService:    azureOpenAIService,
 		weatherService:        weatherService,
+		economicService:       economicService,
 		demandForecastService: demandForecastService,
 		vectorStoreService:    vectorStoreService,
-		statisticsService:     services.NewStatisticsService(weatherService, azureOpenAIService),
+		statisticsService:     services.NewStatisticsService(weatherService, economicService, azureOpenAIService),
 	}
 }
 

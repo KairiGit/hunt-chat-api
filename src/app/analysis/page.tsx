@@ -46,6 +46,38 @@ export default function AnalysisPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // =========================
+  // ④ 経済×売上 相関/因果: 状態
+  // =========================
+  type EconPoint = { date?: string; period?: string; value?: number };
+  type SalesPoint = { date?: string; period?: string; sales?: number; value?: number };
+  type WindowResult = { window_start: string; window_end: string; best_lag: number; r: number; p: number; p_adj?: number; n: number };
+  type LagResult = { lag?: number; best_lag?: number; r?: number; correlation_coef?: number; p?: number; p_value?: number; n?: number };
+  type GrangerStat = { F?: number; p?: number };
+  type GrangerResult = { direction?: string; order?: number; granularity?: string; x_to_y?: GrangerStat; y_to_x?: GrangerStat };
+
+  const [econSymbol, setEconSymbol] = useState('NIKKEI');
+  const [productId, setProductId] = useState('P001');
+  const [econStart, setEconStart] = useState<string>('');
+  const [econEnd, setEconEnd] = useState<string>('');
+  const [econSeries, setEconSeries] = useState<EconPoint[]>([]);
+  const [salesSeries, setSalesSeries] = useState<SalesPoint[]>([]);
+  const [lagResults, setLagResults] = useState<LagResult[] | null>(null);
+  const [winResults, setWinResults] = useState<WindowResult[] | null>(null);
+  const [granger, setGranger] = useState<GrangerResult | null>(null);
+  const [econMsg, setEconMsg] = useState<string>('');
+
+  // レポート選択時に期間を自動反映（YYYY-MM-DD を2つ拾う）
+  useEffect(() => {
+    const range = selectedReport?.date_range || '';
+    const matches = range.match(/\d{4}-\d{2}-\d{2}/g) || [];
+    if (matches.length >= 2) {
+  // Guard against potential undefined for TypeScript
+  setEconStart(matches[0] ?? '');
+  setEconEnd(matches[1] ?? '');
+    }
+  }, [selectedReport]);
+
   const handleGranularityChange = (newGranularity: 'daily' | 'weekly' | 'monthly') => {
     // 既に分析済みの場合はアラートを表示
     if (selectedReport || analysisSummary) {
@@ -251,6 +283,102 @@ export default function AnalysisPage() {
       setError(e instanceof Error ? e.message : 'An unknown error occurred during analysis.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // =========================
+  // ④ 経済×売上 相関/因果: ハンドラ
+  // =========================
+  const fetchEcon = async () => {
+    setEconMsg('');
+    try {
+      const s = econStart || '2024-01-01';
+      const e = econEnd || new Date().toISOString().slice(0, 10);
+      const url = `/api/proxy/econ/series?symbol=${encodeURIComponent(econSymbol)}&start=${s}&end=${e}&granularity=${granularity}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || res.statusText);
+      setEconSeries(data.series || []);
+      setEconMsg(`✅ 指標 ${econSymbol}：${data.count ?? (data.series?.length || 0)} 件`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setEconMsg(`❌ ${msg}`);
+    }
+  };
+
+  const fetchSales = async () => {
+    setEconMsg('');
+    try {
+      const s = econStart || '2024-01-01';
+      const e = econEnd || new Date().toISOString().slice(0, 10);
+      const url = `/api/proxy/econ/sales/series?product_id=${encodeURIComponent(productId)}&start=${s}&end=${e}&granularity=${granularity}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || res.statusText);
+      setSalesSeries(data.series || []);
+      setEconMsg(`✅ 売上 ${productId}：${data.count ?? (data.series?.length || 0)} 件`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setEconMsg(`❌ ${msg}`);
+    }
+  };
+
+  const runLag = async () => {
+    setEconMsg('');
+    setLagResults(null);
+    try {
+      const s = econStart || '2024-01-01';
+      const e = econEnd || new Date().toISOString().slice(0, 10);
+      // sales: 日付キーは date or period を受け入れ、数値は sales or value
+      const salesBody = (salesSeries || []).map(p => ({ date: p.date || p.period!, sales: p.sales ?? p.value ?? 0 }));
+      const res = await fetch('/api/proxy/econ/lagged-correlation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: econSymbol, start: s, end: e, sales: salesBody, max_lag: 21, granularity: granularity })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || res.statusText);
+      setLagResults(data.results || []);
+      setEconMsg(`✅ ラグ相関 OK（top lag=${data.top?.lag ?? data.top?.best_lag ?? '-'}）`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setEconMsg(`❌ ${msg}`);
+    }
+  };
+
+  const runWindowed = async () => {
+    setEconMsg('');
+    setWinResults(null);
+    try {
+      const s = econStart || '2024-01-01';
+      const e = econEnd || new Date().toISOString().slice(0, 10);
+      const body = { product_id: productId, symbol: econSymbol, start: s, end: e, max_lag: 21, window_days: 90, step_days: 30, granularity: granularity };
+      const res = await fetch('/api/proxy/econ/sales/lagged-correlation/windowed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || res.statusText);
+      setWinResults(data.windows || []);
+      setEconMsg(`✅ スライディング窓 OK（${(data.windows || []).length}件）`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setEconMsg(`❌ ${msg}`);
+    }
+  };
+
+  const runGranger = async () => {
+    setEconMsg('');
+    setGranger(null);
+    try {
+      const s = econStart || '2024-01-01';
+      const e = econEnd || new Date().toISOString().slice(0, 10);
+      const body = { product_id: productId, symbol: econSymbol, start: s, end: e, order: 3, granularity: granularity };
+      const res = await fetch('/api/proxy/econ/sales/granger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || res.statusText);
+      setGranger(data);
+      setEconMsg(`✅ グランジャー OK（${data.direction}）`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setEconMsg(`❌ ${msg}`);
     }
   };
 
@@ -523,6 +651,178 @@ export default function AnalysisPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ④ 経済×売上 相関/因果 分析 */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-bold">④ 経済×売上 相関/因果 分析</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle>条件（粒度は上部の選択を流用）</CardTitle>
+            <CardDescription>シンボル・製品・期間を指定して系列取得 → 相関/窓/因果を実行</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+              <div>
+                <Label>シンボル</Label>
+                <Input value={econSymbol} onChange={(e) => setEconSymbol(e.target.value.toUpperCase())} />
+              </div>
+              <div>
+                <Label>製品ID</Label>
+                <Input value={productId} onChange={(e) => setProductId(e.target.value)} />
+              </div>
+              <div>
+                <Label>開始</Label>
+                <Input type="date" value={econStart} onChange={(e) => setEconStart(e.target.value)} />
+              </div>
+              <div>
+                <Label>終了</Label>
+                <Input type="date" value={econEnd} onChange={(e) => setEconEnd(e.target.value)} />
+              </div>
+              <div className="md:col-span-2 flex items-end gap-2">
+                <Button onClick={fetchEcon}>指標取得</Button>
+                <Button onClick={fetchSales}>売上取得</Button>
+                <Button onClick={runLag} disabled={salesSeries.length === 0}>ラグ相関</Button>
+                <Button onClick={runWindowed}>窓分析</Button>
+                <Button onClick={runGranger}>因果性</Button>
+              </div>
+            </div>
+            {econMsg && (
+              <div className={`mt-2 text-sm ${econMsg.startsWith('✅') ? 'text-green-700' : 'text-red-600'}`}>{econMsg}</div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>経済系列</CardTitle>
+              <CardDescription>{econSymbol}（{granularity}）</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-64 overflow-auto text-sm">
+                {econSeries.length === 0 ? (
+                  <div className="text-gray-500">なし</div>
+                ) : (
+                  <table className="w-full">
+                    <thead>
+                      <tr><th className="text-left p-1">日付/期間</th><th className="text-right p-1">値</th></tr>
+                    </thead>
+                    <tbody>
+                      {econSeries.map((p, i) => (
+                        <tr key={i} className="border-b">
+                          <td className="p-1">{p.date || p.period}</td>
+                          <td className="p-1 text-right">{p.value !== undefined ? p.value.toFixed(2) : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>売上系列</CardTitle>
+              <CardDescription>{productId}（{granularity}）</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-64 overflow-auto text-sm">
+                {salesSeries.length === 0 ? (
+                  <div className="text-gray-500">なし</div>
+                ) : (
+                  <table className="w-full">
+                    <thead>
+                      <tr><th className="text-left p-1">日付/期間</th><th className="text-right p-1">売上</th></tr>
+                    </thead>
+                    <tbody>
+                      {salesSeries.map((p, i) => (
+                        <tr key={i} className="border-b">
+                          <td className="p-1">{p.date || p.period}</td>
+                          <td className="p-1 text-right">{(p.sales ?? p.value) !== undefined ? (p.sales ?? p.value)!.toFixed(2) : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>ラグ相関（全体）</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!lagResults ? (
+                <div className="text-sm text-gray-500">未実行</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr><th className="text-left p-1">ラグ</th><th className="text-right p-1">r</th><th className="text-right p-1">p</th><th className="text-right p-1">n</th></tr>
+                  </thead>
+                  <tbody>
+                    {lagResults.map((r: LagResult, i: number) => (
+                      <tr key={i} className="border-b">
+                        <td className="p-1">{r.lag ?? r.best_lag}</td>
+                        <td className="p-1 text-right">{(r.r ?? r.correlation_coef)?.toFixed?.(3)}</td>
+                        <td className="p-1 text-right">{Number(r.p ?? r.p_value).toExponential?.(2)}</td>
+                        <td className="p-1 text-right">{r.n}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>スライディング窓 最適ラグ</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!winResults ? (
+                <div className="text-sm text-gray-500">未実行</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr><th className="text-left p-1">期間</th><th className="text-right p-1">最適ラグ</th><th className="text-right p-1">r</th><th className="text-right p-1">p_adj</th></tr>
+                  </thead>
+                  <tbody>
+                    {winResults.map((w, i) => (
+                      <tr key={i} className="border-b">
+                        <td className="p-1">{w.window_start} — {w.window_end}</td>
+                        <td className="p-1 text-right">{w.best_lag}</td>
+                        <td className="p-1 text-right">{w.r?.toFixed?.(3)}</td>
+                        <td className="p-1 text-right">{Number(w.p_adj ?? w.p).toExponential?.(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>グランジャー因果</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!granger ? (
+              <div className="text-sm text-gray-500">未実行</div>
+            ) : (
+              <div className="text-sm space-y-1">
+                <div>方向: <b>{granger.direction}</b>（order={granger.order}, gran={granger.granularity}）</div>
+                <div>x→y: F={granger.x_to_y?.F?.toFixed?.(3)} p={Number(granger.x_to_y?.p).toExponential?.(2)}</div>
+                <div>y→x: F={granger.y_to_x?.F?.toFixed?.(3)} p={Number(granger.y_to_x?.p).toExponential?.(2)}</div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
     </div>
   );

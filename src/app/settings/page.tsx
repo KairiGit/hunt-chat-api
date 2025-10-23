@@ -36,15 +36,17 @@ export default function SettingsPage() {
       const ct = res.headers.get("content-type") || "";
       if (!res.ok) {
         if (ct.includes("application/json")) {
-          const data = await res.json().catch(() => ({} as any));
-          setResult(`❌ 失敗(${res.status}): ${data?.error || JSON.stringify(data) || res.statusText}`);
+          const data: unknown = await res.json().catch(() => ({}));
+          const err = (data && typeof data === 'object' && 'error' in data) ? (data as { error?: string }).error : undefined;
+          setResult(`❌ 失敗(${res.status}): ${err || JSON.stringify(data) || res.statusText}`);
         } else {
           const text = await res.text().catch(() => "");
           setResult(`❌ 失敗(${res.status}): ${text || res.statusText}`);
         }
       } else {
-        const data = ct.includes("application/json") ? await res.json().catch(() => ({} as any)) : {};
-        setResult(`✅ 成功: ${data.symbol ?? symbol} を ${data.stored ?? 0} 件取り込み`);
+        const data: unknown = ct.includes("application/json") ? await res.json().catch(() => ({})) : {};
+        const d = (data && typeof data === 'object') ? data as { symbol?: string; stored?: number } : {};
+        setResult(`✅ 成功: ${d.symbol ?? symbol} を ${d.stored ?? 0} 件取り込み`);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

@@ -217,22 +217,22 @@ export default function AnomalyResponsePage() {
   };
 
   return (
-    <Card className="h-[calc(100vh-2rem)] flex flex-col">
-      <CardHeader className="flex-shrink-0 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-b">
+    <Card className="h-full flex flex-col">
+      <CardHeader className="flex-shrink-0 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-b py-2 px-6">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-amber-500 rounded-lg">
               <AlertCircle className="h-6 w-6 text-white" />
             </div>
             <div>
-              <CardTitle className="text-2xl text-amber-900 dark:text-amber-100">異常対応チャット</CardTitle>
-              <CardDescription className="text-amber-700 dark:text-amber-300">
+              <CardTitle className="text-lg text-amber-900 dark:text-amber-100">異常対応チャット</CardTitle>
+              <CardDescription className="text-amber-700 dark:text-amber-300 text-xs">
                 検出された異常について原因を教えてください
               </CardDescription>
             </div>
           </div>
           
           {unansweredAnomalies.length > 0 && !isWaitingForResponse && (
-            <div className="mt-4">
+            <div className="mt-2">
               <Button 
                 onClick={startAnswering}
                 className="w-full bg-amber-500 hover:bg-amber-600 text-white"
@@ -245,16 +245,16 @@ export default function AnomalyResponsePage() {
         </CardHeader>
 
         <CardContent className="flex-1 p-0 min-h-0">
-          <ScrollArea ref={scrollAreaRef} className="h-full p-4">
-            <div className="space-y-4">
+          <ScrollArea ref={scrollAreaRef} className="h-full">
+            <div className="space-y-2 px-4 pt-2">
               {chatMessages.map((msg, idx) => (
-                <div key={idx} className={`flex items-start gap-3 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <Avatar className={msg.sender === 'user' ? 'bg-blue-500' : 'bg-gradient-to-br from-amber-400 to-orange-500'}>
+                <div key={idx} className={`flex items-start gap-2 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
+                  <Avatar className={`h-8 w-8 ${msg.sender === 'user' ? 'bg-blue-500' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`}>
                     <AvatarFallback className="text-white">
-                      {msg.sender === 'user' ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+                      {msg.sender === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                     </AvatarFallback>
                   </Avatar>
-                  <div className={`rounded-lg px-4 py-3 max-w-[80%] ${
+                  <div className={`rounded-lg px-3 py-2 max-w-[85%] ${
                     msg.sender === 'user' 
                       ? 'bg-blue-500 text-white ml-auto' 
                       : 'bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30 text-amber-900 dark:text-amber-100 border border-amber-200 dark:border-amber-800'

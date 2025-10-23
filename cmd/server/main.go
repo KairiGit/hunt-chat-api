@@ -45,10 +45,19 @@ func main() {
 		// Continue running without vector store for now
 	}
 
+	// 経済データサービスの初期化
+	economicSymbolMapping := map[string]string{
+		"NIKKEI": "moc/nikkei_daily.csv",
+		// 追加の経済指標はここに追加
+		// "USDJPY": "data/econ/usdjpy.csv",
+		// "WTI": "data/econ/wti.csv",
+	}
+	economicService := services.NewEconomicService("", economicSymbolMapping)
+
 	// ハンドラーの初期化
 	weatherHandler := handlers.NewWeatherHandler()
 	demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
-	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), demandForecastHandler.GetDemandForecastService(), vectorStoreService)
+	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), economicService, demandForecastHandler.GetDemandForecastService(), vectorStoreService)
 	economicHandler := handlers.NewEconomicHandler(vectorStoreService)
 
 	// 認証ミドルウェア
@@ -159,12 +168,17 @@ func main() {
 		econ := v1.Group("/econ")
 		{
 			econ.GET("/series", economicHandler.GetSeries)
+			econ.GET("/sales/series", economicHandler.GetSalesSeries)
 			econ.GET("/returns", economicHandler.GetReturns)
 			econ.POST("/register", economicHandler.RegisterSymbol)
 			econ.POST("/import", economicHandler.ImportCSV)
 			econ.POST("/lagged-correlation", economicHandler.AnalyzeLaggedCorrelation)
 			econ.POST("/sales/import", economicHandler.ImportSales)
 			econ.POST("/sales/lagged-correlation", economicHandler.AnalyzeProductEconLagged)
+			econ.POST("/sales/lagged-correlation/windowed", economicHandler.AnalyzeWindowedLag)
+			econ.POST("/sales/granger", economicHandler.GrangerCausality)
+			econ.POST("/aggregate", economicHandler.AggregateEconomic)
+			econ.POST("/sales/aggregate", economicHandler.AggregateSales)
 		}
 	} // サーバー起動
 	log.Println("Starting HUNT Chat-API server on :8080")

@@ -16,13 +16,15 @@ import (
 // StatisticsService 統計分析サービス
 type StatisticsService struct {
 	weatherService     *WeatherService
+	economicService    *EconomicService
 	azureOpenAIService *AzureOpenAIService
 }
 
 // NewStatisticsService 新しい統計分析サービスを作成
-func NewStatisticsService(weatherService *WeatherService, azureOpenAIService *AzureOpenAIService) *StatisticsService {
+func NewStatisticsService(weatherService *WeatherService, economicService *EconomicService, azureOpenAIService *AzureOpenAIService) *StatisticsService {
 	return &StatisticsService{
 		weatherService:     weatherService,
+		economicService:    economicService,
 		azureOpenAIService: azureOpenAIService,
 	}
 }
@@ -65,14 +67,20 @@ func (s *StatisticsService) CalculateLaggedCorrelations(xDates []string, xVals [
 	}
 	// Build map for fast lookup
 	xMap := make(map[string]float64, len(xDates))
-	for i, d := range xDates { xMap[d] = xVals[i] }
+	for i, d := range xDates {
+		xMap[d] = xVals[i]
+	}
 	yMap := make(map[string]float64, len(yDates))
-	for i, d := range yDates { yMap[d] = yVals[i] }
+	for i, d := range yDates {
+		yMap[d] = yVals[i]
+	}
 
 	// Helper to shift dates by lag days
 	shift := func(date string, lag int) (string, bool) {
 		t, err := time.Parse("2006-01-02", date)
-		if err != nil { return "", false }
+		if err != nil {
+			return "", false
+		}
 		return t.AddDate(0, 0, lag).Format("2006-01-02"), true
 	}
 
@@ -81,9 +89,13 @@ func (s *StatisticsService) CalculateLaggedCorrelations(xDates []string, xVals [
 		var xs, ys []float64
 		// align on x dates
 		for _, d := range xDates {
-			if d == "" { continue }
+			if d == "" {
+				continue
+			}
 			shifted, ok := shift(d, lag)
-			if !ok { continue }
+			if !ok {
+				continue
+			}
 			xv, okx := xMap[d]
 			yv, oky := yMap[shifted]
 			if okx && oky {
@@ -96,8 +108,12 @@ func (s *StatisticsService) CalculateLaggedCorrelations(xDates []string, xVals [
 			if err == nil {
 				p := s.CalculatePValue(r, len(xs))
 				label := "lag=0"
-				if lag > 0 { label = fmt.Sprintf("yがxに対して+%d日遅れ", lag) }
-				if lag < 0 { label = fmt.Sprintf("yがxに対して%d日先行", -lag) }
+				if lag > 0 {
+					label = fmt.Sprintf("yがxに対して+%d日遅れ", lag)
+				}
+				if lag < 0 {
+					label = fmt.Sprintf("yがxに対して%d日先行", -lag)
+				}
 				results = append(results, models.CorrelationResult{
 					Factor:          label,
 					CorrelationCoef: r,
@@ -108,29 +124,299 @@ func (s *StatisticsService) CalculateLaggedCorrelations(xDates []string, xVals [
 			}
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return math.Abs(results[i].CorrelationCoef) > math.Abs(results[j].CorrelationCoef) })
+	sort.Slice(results, func(i, j int) bool {
+		return math.Abs(results[i].CorrelationCoef) > math.Abs(results[j].CorrelationCoef)
+	})
 	return results, nil
 }
 
 // CalculatePValue 相関係数のp値を近似計算（簡易版）
 func (s *StatisticsService) CalculatePValue(r float64, n int) float64 {
 	if n < 3 {
-		return 1.0 // サンプル数が少なすぎる
+		return 1.0
 	}
-
-	// t統計量の計算
 	t := r * math.Sqrt(float64(n-2)) / math.Sqrt(1-r*r)
-
-	// 自由度 n-2 のt分布を使ってp値を近似
-	// 簡易版: |t| > 2.0 で有意（p < 0.05程度）
-	absT := math.Abs(t)
-	if absT > 2.576 {
-		return 0.01 // p < 0.01
-	} else if absT > 1.96 {
-		return 0.05 // p < 0.05
-	} else {
-		return 0.10 // p > 0.05 (not significant)
+	df := float64(n - 2)
+	// Use Student's t CDF for two-tailed p-value
+	p := 2 * (1 - studentTCDF(math.Abs(t), df))
+	if p < 0 {
+		p = 0
 	}
+	if p > 1 {
+		p = 1
+	}
+	return p
+}
+
+// studentTCDF computes the CDF of Student's t at x with df degrees of freedom.
+// Uses regularized incomplete beta relation for accuracy.
+func studentTCDF(x, df float64) float64 {
+	// For x=0, CDF=0.5
+	if x == 0 {
+		return 0.5
+	}
+	// Relation: CDF = 0.5 + x * Gamma((v+1)/2) * 2F1(...) / (sqrt(v*pi) * Gamma(v/2))
+	// We'll use the incomplete beta representation:
+	// For t>0: CDF = 1 - 0.5*I_{v/(v+t^2)}(v/2, 1/2)
+	// For t<0: CDF = 0.5*I_{v/(v+t^2)}(v/2, 1/2)
+	v := df
+	t2 := x * x
+	z := v / (v + t2)
+	ib := regularizedIncompleteBeta(0.5*v, 0.5, z)
+	if x > 0 {
+		return 1 - 0.5*ib
+	}
+	return 0.5 * ib
+}
+
+// regularizedIncompleteBeta returns I_x(a,b).
+// We implement a simple continued fraction via Lentz's algorithm for the incomplete beta function ratio.
+func regularizedIncompleteBeta(a, b, x float64) float64 {
+	if x <= 0 {
+		return 0
+	}
+	if x >= 1 {
+		return 1
+	}
+	// Use symmetry to improve convergence
+	bt := math.Exp(lgamma(a+b) - lgamma(a) - lgamma(b) + a*math.Log(x) + b*math.Log(1-x))
+	var ib float64
+	if x < (a+1)/(a+b+2) {
+		ib = bt * betacf(a, b, x) / a
+	} else {
+		ib = 1 - bt*betacf(b, a, 1-x)/b
+	}
+	return ib
+}
+
+// betacf computes the continued fraction for incomplete beta using Lentz's algorithm.
+func betacf(a, b, x float64) float64 {
+	const maxIter = 200
+	const eps = 3e-7
+	const fpmin = 1e-30
+	am := 1.0
+	bm := 1.0
+	az := 1.0
+	qab := a + b
+	qap := a + 1
+	qam := a - 1
+	bz := 1 - qab*x/qap
+	var em, tem, d, ap, app, aold float64
+	for m := 1; m <= maxIter; m++ {
+		em = float64(m)
+		tem = em + em
+		d = em * (b - em) * x / ((qam + tem) * (a + tem))
+		ap = az + d*am
+		bp := bz + d*bm
+		d = -(a + em) * (qab + em) * x / ((a + tem) * (qap + tem))
+		app = ap + d*az
+		bpp := bp + d*bz
+		am = ap / bpp
+		bm = bp / bpp
+		az = app / bpp
+		bz = 1.0
+		aold = az
+		if math.Abs((az-aold)/az) < eps {
+			return az
+		}
+		if math.Abs(bpp) < fpmin {
+			bpp = fpmin
+		}
+	}
+	return az
+}
+
+// lgamma wrapper for math.Lgamma returning sign-less log gamma
+func lgamma(x float64) float64 {
+	l, _ := math.Lgamma(x)
+	return l
+}
+
+// AdjustPValuesBH applies Benjamini-Hochberg FDR correction to a slice of p-values.
+func (s *StatisticsService) AdjustPValuesBH(pvals []float64) []float64 {
+	n := len(pvals)
+	type kv struct {
+		p float64
+		i int
+	}
+	arr := make([]kv, n)
+	for i, p := range pvals {
+		arr[i] = kv{p: p, i: i}
+	}
+	sort.Slice(arr, func(i, j int) bool { return arr[i].p < arr[j].p })
+	adj := make([]float64, n)
+	var prev float64 = 1.0
+	for i := n - 1; i >= 0; i-- {
+		rank := float64(i + 1)
+		val := arr[i].p * float64(n) / rank
+		if val > prev {
+			val = prev
+		}
+		if val > 1 {
+			val = 1
+		}
+		adj[i] = val
+		prev = val
+	}
+	// restore original order
+	out := make([]float64, n)
+	for idx, a := range adj {
+		out[arr[idx].i] = a
+	}
+	return out
+}
+
+// FirstDifference transforms series to first differences to remove trend.
+func (s *StatisticsService) FirstDifference(vals []float64) []float64 {
+	if len(vals) < 2 {
+		return vals
+	}
+	out := make([]float64, 0, len(vals)-1)
+	for i := 1; i < len(vals); i++ {
+		out = append(out, vals[i]-vals[i-1])
+	}
+	return out
+}
+
+// Detrend by subtracting linear trend.
+func (s *StatisticsService) Detrend(vals []float64) []float64 {
+	n := len(vals)
+	if n < 2 {
+		return vals
+	}
+	// simple linear regression on index
+	xs := make([]float64, n)
+	for i := 0; i < n; i++ {
+		xs[i] = float64(i + 1)
+	}
+	reg, err := s.PerformLinearRegression(xs, vals)
+	if err != nil {
+		return vals
+	}
+	out := make([]float64, n)
+	for i := 0; i < n; i++ {
+		out[i] = vals[i] - (reg.Slope*xs[i] + reg.Intercept)
+	}
+	return out
+}
+
+// CalculateLaggedCorrelationsWindowed runs lag scan over sliding windows across time.
+// windows of size windowDays, step stepDays, returns best lag per window including p and BH-corrected p over lags.
+func (s *StatisticsService) CalculateLaggedCorrelationsWindowed(xDates []string, xVals []float64, yDates []string, yVals []float64, maxLagDays int, windowDays int, stepDays int) ([]map[string]interface{}, error) {
+	if len(xDates) != len(xVals) || len(yDates) != len(yVals) {
+		return nil, fmt.Errorf("データ系列の長さが一致しません")
+	}
+	if windowDays < 7 {
+		return nil, fmt.Errorf("windowDaysは7以上を指定してください")
+	}
+	// map for lookup
+	xMap := map[string]float64{}
+	for i, d := range xDates {
+		xMap[d] = xVals[i]
+	}
+	yMap := map[string]float64{}
+	for i, d := range yDates {
+		yMap[d] = yVals[i]
+	}
+
+	// window loop over x timeline
+	var results []map[string]interface{}
+	// convert xDates to times
+	var times []time.Time
+	for _, d := range xDates {
+		if t, err := time.Parse("2006-01-02", d); err == nil {
+			times = append(times, t)
+		}
+	}
+	if len(times) == 0 {
+		return nil, fmt.Errorf("xDatesの形式が不正です")
+	}
+	// ensure sorted
+	sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
+	startIdx := 0
+	for {
+		winStart := times[startIdx]
+		winEnd := winStart.AddDate(0, 0, windowDays-1)
+		// collect window dates
+		var wxDates []string
+		for _, t := range times {
+			if t.Before(winStart) || t.After(winEnd) {
+				continue
+			}
+			wxDates = append(wxDates, t.Format("2006-01-02"))
+		}
+		if len(wxDates) < 5 {
+			break
+		}
+		// sweep lags
+		type lr struct {
+			lag int
+			r   float64
+			p   float64
+			n   int
+		}
+		var all []lr
+		for lag := -maxLagDays; lag <= maxLagDays; lag++ {
+			var xs, ys []float64
+			for _, d := range wxDates {
+				t, _ := time.Parse("2006-01-02", d)
+				sd := t.AddDate(0, 0, lag).Format("2006-01-02")
+				xv, okx := xMap[d]
+				yv, oky := yMap[sd]
+				if okx && oky {
+					xs = append(xs, xv)
+					ys = append(ys, yv)
+				}
+			}
+			if len(xs) >= 5 && len(xs) == len(ys) {
+				r, err := s.CalculateCorrelation(xs, ys)
+				if err == nil {
+					p := s.CalculatePValue(r, len(xs))
+					all = append(all, lr{lag: lag, r: r, p: p, n: len(xs)})
+				}
+			}
+		}
+		if len(all) > 0 {
+			// BH correction across lags in the window
+			pvals := make([]float64, len(all))
+			for i, a := range all {
+				pvals[i] = a.p
+			}
+			padj := s.AdjustPValuesBH(pvals)
+			// pick best by |r|
+			bestIdx := 0
+			for i := 1; i < len(all); i++ {
+				if math.Abs(all[i].r) > math.Abs(all[bestIdx].r) {
+					bestIdx = i
+				}
+			}
+			res := map[string]interface{}{
+				"window_start": winStart.Format("2006-01-02"),
+				"window_end":   winEnd.Format("2006-01-02"),
+				"best_lag":     all[bestIdx].lag,
+				"r":            all[bestIdx].r,
+				"p":            all[bestIdx].p,
+				"p_adj":        padj[bestIdx],
+				"n":            all[bestIdx].n,
+			}
+			results = append(results, res)
+		}
+		// advance window
+		winNext := winStart.AddDate(0, 0, stepDays)
+		// find index closest to winNext
+		nextIdx := -1
+		for i, t := range times {
+			if !t.Before(winNext) {
+				nextIdx = i
+				break
+			}
+		}
+		if nextIdx == -1 || nextIdx == startIdx {
+			break
+		}
+		startIdx = nextIdx
+	}
+	return results, nil
 }
 
 // InterpretCorrelation 相関係数を人間が読める形で解釈
@@ -190,7 +476,7 @@ func (s *StatisticsService) calculateStandardDeviation(values []float64) float64
 	return math.Sqrt(variance)
 }
 
-// AnalyzeSalesWeatherCorrelation 販売データと気象データの相関を分析
+// AnalyzeSalesWeatherCorrelation 販売データと気象データの相関を分析（遅れ相関を含む）
 func (s *StatisticsService) AnalyzeSalesWeatherCorrelation(
 	salesData []models.WeatherSalesData,
 	regionCode string,
@@ -227,64 +513,209 @@ func (s *StatisticsService) AnalyzeSalesWeatherCorrelation(
 		return nil, fmt.Errorf("気象データの取得に失敗: %w", err)
 	}
 
-	// 日付をキーにして気象データをマップ化
-	weatherMap := make(map[string]struct {
-		Temperature float64
-		Humidity    float64
-	})
-	for _, w := range weatherData {
-		weatherMap[w.Date] = struct {
-			Temperature float64
-			Humidity    float64
-		}{
-			Temperature: w.Temperature,
-			Humidity:    w.Humidity,
-		}
+	if len(weatherData) == 0 {
+		log.Printf("⚠️ 気象データが空です")
+		return []models.CorrelationResult{}, nil
 	}
 
-	// 販売データと気象データをマージ
-	var temperatures, humidities, sales []float64
+	// 販売データの日付と値を抽出
+	var salesDates []string
+	var salesValues []float64
 	for _, sale := range salesData {
-		if weather, ok := weatherMap[sale.Date]; ok {
-			temperatures = append(temperatures, weather.Temperature)
-			humidities = append(humidities, weather.Humidity)
-			sales = append(sales, sale.Sales)
+		salesDates = append(salesDates, sale.Date)
+		salesValues = append(salesValues, sale.Sales)
+	}
+
+	// 気象データの日付と値を抽出
+	var weatherDates []string
+	var tempValues []float64
+	var humValues []float64
+	for _, w := range weatherData {
+		weatherDates = append(weatherDates, w.Date)
+		tempValues = append(tempValues, w.Temperature)
+		humValues = append(humValues, w.Humidity)
+	}
+
+	if len(salesValues) < 5 {
+		return nil, fmt.Errorf("販売データが少なすぎます（最低5件必要）")
+	}
+
+	// 遅れ相関の最大日数（気象データは短期的な影響が多いため経済データより短く設定）
+	maxLagDays := 14 // 最大14日の遅れ相関
+
+	var allResults []models.CorrelationResult
+
+	// 気温との遅れ相関を計算
+	tempLaggedCorrs, err := s.CalculateLaggedCorrelations(salesDates, salesValues, weatherDates, tempValues, maxLagDays)
+	if err != nil {
+		log.Printf("⚠️ 気温の遅れ相関計算エラー: %v", err)
+	} else {
+		// Factor名に "temperature_" を追加
+		for i := range tempLaggedCorrs {
+			tempLaggedCorrs[i].Factor = fmt.Sprintf("temperature_%s", tempLaggedCorrs[i].Factor)
+		}
+		// 統計的に有意な結果のみを追加
+		for _, corr := range tempLaggedCorrs {
+			if corr.PValue < 0.05 || math.Abs(corr.CorrelationCoef) >= 0.3 {
+				allResults = append(allResults, corr)
+			}
+		}
+		log.Printf("✅ 気温の遅れ相関分析完了: %d件の有意な相関を検出", len(tempLaggedCorrs))
+	}
+
+	// 湿度との遅れ相関を計算
+	humLaggedCorrs, err := s.CalculateLaggedCorrelations(salesDates, salesValues, weatherDates, humValues, maxLagDays)
+	if err != nil {
+		log.Printf("⚠️ 湿度の遅れ相関計算エラー: %v", err)
+	} else {
+		// Factor名に "humidity_" を追加
+		for i := range humLaggedCorrs {
+			humLaggedCorrs[i].Factor = fmt.Sprintf("humidity_%s", humLaggedCorrs[i].Factor)
+		}
+		// 統計的に有意な結果のみを追加
+		for _, corr := range humLaggedCorrs {
+			if corr.PValue < 0.05 || math.Abs(corr.CorrelationCoef) >= 0.3 {
+				allResults = append(allResults, corr)
+			}
+		}
+		log.Printf("✅ 湿度の遅れ相関分析完了: %d件の有意な相関を検出", len(humLaggedCorrs))
+	}
+
+	// 相関係数の絶対値でソート（降順）
+	sort.Slice(allResults, func(i, j int) bool {
+		return math.Abs(allResults[i].CorrelationCoef) > math.Abs(allResults[j].CorrelationCoef)
+	})
+
+	// 上位3件のみを返す（最も有意な相関のみを表示）
+	if len(allResults) > 3 {
+		allResults = allResults[:3]
+		log.Printf("📊 気象データ相関: 上位3件に絞り込みました")
+	}
+
+	return allResults, nil
+}
+
+// AnalyzeSalesEconomicCorrelation 販売データと経済データの相関を分析（遅れ相関を含む）
+func (s *StatisticsService) AnalyzeSalesEconomicCorrelation(
+	salesData []models.WeatherSalesData,
+	symbols []string,
+	maxLagDays int,
+) ([]models.CorrelationResult, error) {
+
+	if len(salesData) == 0 {
+		return nil, fmt.Errorf("販売データが空です")
+	}
+
+	if s.economicService == nil {
+		log.Printf("⚠️ EconomicService が初期化されていません")
+		return []models.CorrelationResult{}, nil
+	}
+
+	// デフォルトのシンボルリスト
+	if len(symbols) == 0 {
+		symbols = []string{"NIKKEI", "USDJPY", "WTI"}
+	}
+
+	// 販売データの日付範囲を特定
+	var startDate, endDate time.Time
+	for i, data := range salesData {
+		t, err := time.Parse("2006-01-02", data.Date)
+		if err != nil {
+			continue
+		}
+		if i == 0 || t.Before(startDate) {
+			startDate = t
+		}
+		if i == 0 || t.After(endDate) {
+			endDate = t
 		}
 	}
 
-	if len(sales) < 3 {
-		return nil, fmt.Errorf("マッチするデータが少なすぎます（最低3件必要）")
+	// 日付範囲が特定できない場合はデフォルト（過去90日）
+	if startDate.IsZero() || endDate.IsZero() {
+		endDate = time.Now()
+		startDate = endDate.AddDate(0, 0, -90)
 	}
 
-	var results []models.CorrelationResult
-
-	// 気温と売上の相関
-	tempCorr, err := s.CalculateCorrelation(temperatures, sales)
-	if err == nil {
-		pValue := s.CalculatePValue(tempCorr, len(temperatures))
-		results = append(results, models.CorrelationResult{
-			Factor:          "temperature",
-			CorrelationCoef: tempCorr,
-			PValue:          pValue,
-			SampleSize:      len(temperatures),
-			Interpretation:  s.InterpretCorrelation(tempCorr, pValue),
-		})
+	// デフォルトのラグ範囲
+	if maxLagDays == 0 {
+		maxLagDays = 30 // 最大30日の遅れ相関を調べる
 	}
 
-	// 湿度と売上の相関
-	humCorr, err := s.CalculateCorrelation(humidities, sales)
-	if err == nil {
-		pValue := s.CalculatePValue(humCorr, len(humidities))
-		results = append(results, models.CorrelationResult{
-			Factor:          "humidity",
-			CorrelationCoef: humCorr,
-			PValue:          pValue,
-			SampleSize:      len(humidities),
-			Interpretation:  s.InterpretCorrelation(humCorr, pValue),
-		})
+	var allResults []models.CorrelationResult
+
+	// 各経済指標について相関を計算
+	for _, symbol := range symbols {
+		// 経済データを取得
+		economicSeries, err := s.economicService.GetMarketSeries(symbol, startDate, endDate)
+		if err != nil {
+			log.Printf("⚠️ 経済データ取得エラー (%s): %v", symbol, err)
+			continue
+		}
+
+		if len(economicSeries) == 0 {
+			log.Printf("⚠️ 経済データが空です (%s)", symbol)
+			continue
+		}
+
+		// 経済データをマップ化
+		econMap := make(map[string]float64)
+		for _, point := range economicSeries {
+			econMap[point.Date.Format("2006-01-02")] = point.Value
+		}
+
+		// 販売データの日付と値を抽出
+		var salesDates []string
+		var salesValues []float64
+		for _, sale := range salesData {
+			salesDates = append(salesDates, sale.Date)
+			salesValues = append(salesValues, sale.Sales)
+		}
+
+		// 経済データの日付と値を抽出
+		var econDates []string
+		var econValues []float64
+		for _, point := range economicSeries {
+			econDates = append(econDates, point.Date.Format("2006-01-02"))
+			econValues = append(econValues, point.Value)
+		}
+
+		// 遅れ相関を計算
+		laggedCorrs, err := s.CalculateLaggedCorrelations(salesDates, salesValues, econDates, econValues, maxLagDays)
+		if err != nil {
+			log.Printf("⚠️ 遅れ相関計算エラー (%s): %v", symbol, err)
+			continue
+		}
+
+		// シンボル名を各相関結果に追加
+		for i := range laggedCorrs {
+			// Factor名を更新（シンボル名を含める）
+			laggedCorrs[i].Factor = fmt.Sprintf("%s_%s", symbol, laggedCorrs[i].Factor)
+		}
+
+		// 統計的に有意な結果（p < 0.05）のみを追加
+		// または絶対相関係数が0.3以上のものを追加
+		for _, corr := range laggedCorrs {
+			if corr.PValue < 0.05 || math.Abs(corr.CorrelationCoef) >= 0.3 {
+				allResults = append(allResults, corr)
+			}
+		}
+
+		log.Printf("✅ 経済データ相関分析完了 (%s): %d件の有意な相関を検出", symbol, len(laggedCorrs))
 	}
 
-	return results, nil
+	// 相関係数の絶対値でソート（降順）
+	sort.Slice(allResults, func(i, j int) bool {
+		return math.Abs(allResults[i].CorrelationCoef) > math.Abs(allResults[j].CorrelationCoef)
+	})
+
+	// 上位3件のみを返す（最も有意な相関のみを表示）
+	if len(allResults) > 3 {
+		allResults = allResults[:3]
+		log.Printf("📊 経済データ相関: 上位3件に絞り込みました")
+	}
+
+	return allResults, nil
 }
 
 // PerformLinearRegression 単回帰分析を実行
@@ -412,11 +843,21 @@ func (s *StatisticsService) CreateAnalysisReport(
 	aiInsights string,
 ) (*models.AnalysisReport, error) {
 
-	// 相関分析
-	correlations, err := s.AnalyzeSalesWeatherCorrelation(salesData, regionCode)
+	// 相関分析（天気データ）
+	weatherCorrelations, err := s.AnalyzeSalesWeatherCorrelation(salesData, regionCode)
 	if err != nil {
-		correlations = []models.CorrelationResult{} // エラーでも空配列で継続
+		weatherCorrelations = []models.CorrelationResult{} // エラーでも空配列で継続
 	}
+
+	// 相関分析（経済データ）- 遅れ相関も含む
+	economicCorrelations, err := s.AnalyzeSalesEconomicCorrelation(salesData, []string{"NIKKEI", "USDJPY", "WTI"}, 30)
+	if err != nil {
+		log.Printf("⚠️ 経済データ相関分析エラー: %v", err)
+		economicCorrelations = []models.CorrelationResult{}
+	}
+
+	// 天気と経済の相関結果を結合
+	correlations := append(weatherCorrelations, economicCorrelations...)
 
 	// 統計サマリー生成
 	summary, err := s.GenerateStatisticalSummary(salesData, regionCode)
@@ -519,7 +960,7 @@ func (s *StatisticsService) generateRecommendations(
 ) []string {
 	var recommendations []string
 
-	// 相関分析からのレコメンデーション
+	// 相関分析からのレコメンデーション（天気データ）
 	for _, corr := range correlations {
 		if math.Abs(corr.CorrelationCoef) > 0.5 && corr.PValue < 0.05 {
 			if corr.Factor == "temperature" {
@@ -532,6 +973,29 @@ func (s *StatisticsService) generateRecommendations(
 			if corr.Factor == "humidity" {
 				recommendations = append(recommendations, "湿度と売上に有意な相関が見られます。天気予報と連動した在庫管理を検討してください。")
 			}
+			// 経済データの相関
+			if strings.Contains(corr.Factor, "NIKKEI") {
+				if corr.CorrelationCoef > 0 {
+					recommendations = append(recommendations, fmt.Sprintf("日経平均との正の相関が検出されました（相関係数: %.2f）。株価動向を需要予測に活用できる可能性があります。", corr.CorrelationCoef))
+				} else {
+					recommendations = append(recommendations, fmt.Sprintf("日経平均との負の相関が検出されました（相関係数: %.2f）。景気後退期に需要が増加する製品特性が示唆されます。", corr.CorrelationCoef))
+				}
+			}
+			if strings.Contains(corr.Factor, "USDJPY") {
+				recommendations = append(recommendations, fmt.Sprintf("為替レート（USD/JPY）との相関が検出されました（相関係数: %.2f）。輸入原材料や外国人観光客需要の影響を考慮してください。", corr.CorrelationCoef))
+			}
+			if strings.Contains(corr.Factor, "WTI") {
+				recommendations = append(recommendations, fmt.Sprintf("原油価格との相関が検出されました（相関係数: %.2f）。輸送コストや消費者心理への影響を監視してください。", corr.CorrelationCoef))
+			}
+		}
+	}
+
+	// 遅れ相関の検出
+	for _, corr := range correlations {
+		if strings.Contains(corr.Factor, "遅れ") || strings.Contains(corr.Factor, "先行") {
+			if math.Abs(corr.CorrelationCoef) > 0.4 && corr.PValue < 0.05 {
+				recommendations = append(recommendations, fmt.Sprintf("⏱️ タイムラグが検出されました: %s（相関係数: %.2f）。先行指標として活用できます。", corr.Factor, corr.CorrelationCoef))
+			}
 		}
 	}
 
@@ -542,8 +1006,8 @@ func (s *StatisticsService) generateRecommendations(
 
 	// 相関が見つからなかった場合
 	if len(correlations) == 0 {
-		recommendations = append(recommendations, "⚠️ 販売データの日付と気象データがマッチしませんでした。日付形式を確認してください（YYYY-MM-DD形式を推奨）。")
-		recommendations = append(recommendations, "現在の気象データは模擬データ（過去3年分）です。実際のデータ期間との整合性を確認してください。")
+		recommendations = append(recommendations, "⚠️ 販売データの日付と外部データがマッチしませんでした。日付形式を確認してください（YYYY-MM-DD形式を推奨）。")
+		recommendations = append(recommendations, "現在のデータは模擬データです。実際のデータ期間との整合性を確認してください。")
 	}
 
 	// デフォルトのレコメンデーション
@@ -1270,6 +1734,192 @@ func (s *StatisticsService) buildFactorsList(regression *models.RegressionResult
 	factors = append(factors, "季節性パターンを分析")
 
 	return factors
+}
+
+// SimpleGrangerCausality performs a basic Granger causality test using OLS.
+// direction: "x->y" tests whether past x helps predict y; order=lag order.
+// Returns F-statistic and p-value (approximate).
+func (s *StatisticsService) SimpleGrangerCausality(y []float64, x []float64, order int) (float64, float64, error) {
+	n := len(y)
+	if n != len(x) || n < 5 || order < 1 {
+		return 0, 1, fmt.Errorf("データ不足または不正なorder")
+	}
+	// Build design matrices
+	// Restricted model: y_t ~ y_{t-1..t-p}
+	// Full model: y_t ~ y_{t-1..t-p} + x_{t-1..t-p}
+	T := n - order
+	if T <= order {
+		return 0, 1, fmt.Errorf("サンプル不足")
+	}
+	// Construct matrices
+	Y := make([]float64, T)
+	Xr := make([][]float64, T)
+	Xf := make([][]float64, T)
+	for t := order; t < n; t++ {
+		rowR := make([]float64, order)
+		rowF := make([]float64, 2*order)
+		for p := 1; p <= order; p++ {
+			rowR[p-1] = y[t-p]
+			rowF[p-1] = y[t-p]
+			rowF[order+p-1] = x[t-p]
+		}
+		Xr[t-order] = rowR
+		Xf[t-order] = rowF
+		Y[t-order] = y[t]
+	}
+	rssR, err := olsRSS(Y, Xr)
+	if err != nil {
+		return 0, 1, err
+	}
+	rssF, err := olsRSS(Y, Xf)
+	if err != nil {
+		return 0, 1, err
+	}
+	// F-test
+	df1 := float64(order)
+	df2 := float64(T - 2*order)
+	if df2 <= 0 {
+		return 0, 1, fmt.Errorf("自由度不足")
+	}
+	F := ((rssR - rssF) / df1) / (rssF / df2)
+	// Approximate p-value using F distribution tail via incomplete beta (relation with Beta)
+	p := fDistSurvival(F, df1, df2)
+	return F, p, nil
+}
+
+// olsRSS fits linear regression without intercept using normal equations and returns residual sum of squares.
+func olsRSS(y []float64, X [][]float64) (float64, error) {
+	// Compute beta = (X'X)^{-1} X'y, then residuals y - X beta
+	p := len(X[0])
+	n := len(y)
+	XtX := make([][]float64, p)
+	for i := 0; i < p; i++ {
+		XtX[i] = make([]float64, p)
+	}
+	Xty := make([]float64, p)
+	for i := 0; i < n; i++ {
+		xi := X[i]
+		for a := 0; a < p; a++ {
+			Xty[a] += xi[a] * y[i]
+			for b := 0; b < p; b++ {
+				XtX[a][b] += xi[a] * xi[b]
+			}
+		}
+	}
+	beta, err := solveSymmetric(XtX, Xty)
+	if err != nil {
+		return 0, err
+	}
+	// residuals
+	var rss float64
+	for i := 0; i < n; i++ {
+		pred := 0.0
+		for a := 0; a < p; a++ {
+			pred += X[i][a] * beta[a]
+		}
+		e := y[i] - pred
+		rss += e * e
+	}
+	return rss, nil
+}
+
+// solveSymmetric solves A x = b for symmetric positive definite matrix A using Cholesky; fall back to Gaussian elimination.
+func solveSymmetric(A [][]float64, b []float64) ([]float64, error) {
+	n := len(b)
+	// Attempt Cholesky without goto
+	L := make([][]float64, n)
+	for i := 0; i < n; i++ {
+		L[i] = make([]float64, n)
+	}
+	cholOK := true
+	for i := 0; i < n && cholOK; i++ {
+		for j := 0; j <= i; j++ {
+			sum := 0.0
+			for k := 0; k < j; k++ {
+				sum += L[i][k] * L[j][k]
+			}
+			if i == j {
+				v := A[i][i] - sum
+				if v <= 0 {
+					cholOK = false
+					break
+				}
+				L[i][j] = math.Sqrt(v)
+			} else {
+				if L[j][j] == 0 {
+					cholOK = false
+					break
+				}
+				L[i][j] = (A[i][j] - sum) / L[j][j]
+			}
+		}
+	}
+	if cholOK {
+		// Solve Ly = b
+		y := make([]float64, n)
+		for i := 0; i < n; i++ {
+			sum := 0.0
+			for k := 0; k < i; k++ {
+				sum += L[i][k] * y[k]
+			}
+			y[i] = (b[i] - sum) / L[i][i]
+		}
+		// Solve L^T x = y
+		x := make([]float64, n)
+		for i := n - 1; i >= 0; i-- {
+			sum := 0.0
+			for k := i + 1; k < n; k++ {
+				sum += L[k][i] * x[k]
+			}
+			x[i] = (y[i] - sum) / L[i][i]
+		}
+		return x, nil
+	}
+	// Gaussian elimination fallback
+	Aug := make([][]float64, n)
+	for i := 0; i < n; i++ {
+		Aug[i] = make([]float64, n+1)
+		copy(Aug[i], A[i])
+		Aug[i][n] = b[i]
+	}
+	for i := 0; i < n; i++ {
+		// pivot
+		maxRow := i
+		for r := i + 1; r < n; r++ {
+			if math.Abs(Aug[r][i]) > math.Abs(Aug[maxRow][i]) {
+				maxRow = r
+			}
+		}
+		Aug[i], Aug[maxRow] = Aug[maxRow], Aug[i]
+		if math.Abs(Aug[i][i]) < 1e-12 {
+			return nil, fmt.Errorf("特異行列")
+		}
+		for r := i + 1; r < n; r++ {
+			f := Aug[r][i] / Aug[i][i]
+			for c := i; c <= n; c++ {
+				Aug[r][c] -= f * Aug[i][c]
+			}
+		}
+	}
+	x2 := make([]float64, n)
+	for i := n - 1; i >= 0; i-- {
+		sum := 0.0
+		for c := i + 1; c < n; c++ {
+			sum += Aug[i][c] * x2[c]
+		}
+		x2[i] = (Aug[i][n] - sum) / Aug[i][i]
+	}
+	return x2, nil
+}
+
+// fDistSurvival computes survival function P(F_{d1,d2} >= f) using relation with regularized incomplete beta.
+func fDistSurvival(f, d1, d2 float64) float64 {
+	if f <= 0 {
+		return 1
+	}
+	x := (d2) / (d2 + d1*f)
+	// p = I_x(d2/2, d1/2)
+	return regularizedIncompleteBeta(d2/2, d1/2, x)
 }
 
 // AnalyzeWeeklySales 週次単位での販売分析（粒度指定可能）

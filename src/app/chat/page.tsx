@@ -161,16 +161,16 @@ export default function ChatPage() {
   };
 
   return (
-    <Card className="h-[calc(100vh-2rem)] flex flex-col">
-      <CardHeader className="flex-shrink-0 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-b pb-2">
-          <div className="flex items-center justify-between gap-3 mb-3">
+    <Card className="h-full flex flex-col">
+      <CardHeader className="flex-shrink-0 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-b py-2 px-6">
+          <div className="flex items-center justify-between gap-3 mb-2">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-purple-500 rounded-lg">
                 <MessageSquare className="h-6 w-6 text-white" />
               </div>
               <div>
-                <CardTitle className="text-2xl text-purple-900 dark:text-purple-100">AI分析チャット</CardTitle>
-                <CardDescription className="text-purple-700 dark:text-purple-300">
+                <CardTitle className="text-lg text-purple-900 dark:text-purple-100">AI分析チャット</CardTitle>
+                <CardDescription className="text-purple-700 dark:text-purple-300 text-xs">
                   分析結果について質問したり、過去のデータを検索できます
                 </CardDescription>
               </div>
@@ -236,9 +236,9 @@ export default function ChatPage() {
         </CardHeader>
 
         <CardContent className="flex-1 p-0 min-h-0">
-          <ScrollArea ref={scrollAreaRef} className="h-full p-4">
+          <ScrollArea ref={scrollAreaRef} className="h-full">
             {chatMessages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
+              <div className="flex flex-col items-center justify-center h-full text-center space-y-4 px-4 pt-2">
                 <div className="p-4 bg-purple-100 dark:bg-purple-900/30 rounded-full">
                   <MessageSquare className="h-12 w-12 text-purple-500 dark:text-purple-400" />
                 </div>
@@ -311,15 +311,15 @@ export default function ChatPage() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-2 px-4 pt-2">
                 {chatMessages.map((msg, idx) => (
-                  <div key={idx} className={`flex items-start gap-3 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
-                    <Avatar className={msg.sender === 'user' ? 'bg-blue-500' : 'bg-gradient-to-br from-purple-400 to-indigo-500'}>
+                  <div key={idx} className={`flex items-start gap-2 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
+                    <Avatar className={`h-8 w-8 ${msg.sender === 'user' ? 'bg-blue-500' : 'bg-gradient-to-br from-purple-400 to-indigo-500'}`}>
                       <AvatarFallback className="text-white">
-                        {msg.sender === 'user' ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+                        {msg.sender === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                       </AvatarFallback>
                     </Avatar>
-                    <div className={`rounded-lg px-4 py-3 max-w-[80%] ${
+                    <div className={`rounded-lg px-3 py-2 max-w-[85%] ${
                       msg.sender === 'user' 
                         ? 'bg-blue-500 text-white ml-auto' 
                         : 'bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/30 dark:to-indigo-900/30 text-purple-900 dark:text-purple-100 border border-purple-200 dark:border-purple-800'

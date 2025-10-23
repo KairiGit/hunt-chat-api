@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"hunt-chat-api/pkg/models"
@@ -24,6 +25,126 @@ type VectorStoreService struct {
 	qdrantClient            qdrant.PointsClient
 	qdrantCollectionsClient qdrant.CollectionsClient
 	azureOpenAIService      *AzureOpenAIService
+}
+
+// AggregatedPoint represents a weekly/monthly aggregated value over a period.
+type AggregatedPoint struct {
+	Period    string  // e.g., 2024-W12 or 2024-03
+	StartDate string  // YYYY-MM-DD (inclusive)
+	EndDate   string  // YYYY-MM-DD (inclusive)
+	Value     float64 // aggregated value
+}
+
+// AggregateSeriesDailyTo aggregates economic daily series to the specified granularity.
+// daily: []struct{Date string; Value float64}; granularity: "weekly"|"monthly"; method: "sum"|"mean"|"last"
+func AggregateSeriesDailyTo(daily []struct {
+	Date  string
+	Value float64
+}, granularity, method string) []AggregatedPoint {
+	if granularity == "daily" {
+		// Not applicable; return empty
+		return nil
+	}
+	groups := make(map[string][]struct {
+		t time.Time
+		v float64
+	})
+	meta := make(map[string]struct{ start, end time.Time })
+	order := make([]string, 0)
+	for _, d := range daily {
+		if d.Date == "" {
+			continue
+		}
+		t, err := time.Parse("2006-01-02", d.Date)
+		if err != nil {
+			continue
+		}
+		var key string
+		var start, end time.Time
+		switch granularity {
+		case "weekly":
+			// ISO week; use Monday-Sunday
+			// find Monday of this week
+			weekday := int(t.Weekday())
+			if weekday == 0 {
+				weekday = 7
+			}
+			start = t.AddDate(0, 0, -(weekday - 1))
+			end = start.AddDate(0, 0, 6)
+			y, w := start.ISOWeek()
+			key = fmt.Sprintf("%04d-W%02d", y, w)
+		case "monthly":
+			start = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+			end = start.AddDate(0, 1, -1)
+			key = start.Format("2006-01")
+		default:
+			continue
+		}
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], struct {
+			t time.Time
+			v float64
+		}{t: t, v: d.Value})
+		if m, ok := meta[key]; ok {
+			if d, _ := time.Parse("2006-01-02", m.start.Format("2006-01-02")); t.Before(d) {
+				m.start = t
+			}
+			if t.After(m.end) {
+				m.end = t
+			}
+			meta[key] = m
+		} else {
+			meta[key] = struct{ start, end time.Time }{start: start, end: end}
+		}
+	}
+	// stable order by key
+	sort.Strings(order)
+	out := make([]AggregatedPoint, 0, len(order))
+	for _, key := range order {
+		values := groups[key]
+		if len(values) == 0 {
+			continue
+		}
+		var val float64
+		switch strings.ToLower(method) {
+		case "mean", "avg":
+			for _, x := range values {
+				val += x.v
+			}
+			val /= float64(len(values))
+		case "last":
+			// pick last by time
+			sort.Slice(values, func(i, j int) bool { return values[i].t.Before(values[j].t) })
+			val = values[len(values)-1].v
+		default: // sum
+			for _, x := range values {
+				val += x.v
+			}
+		}
+		m := meta[key]
+		out = append(out, AggregatedPoint{Period: key, StartDate: m.start.Format("2006-01-02"), EndDate: m.end.Format("2006-01-02"), Value: val})
+	}
+	return out
+}
+
+// AggregateSalesDailyTo aggregates sales daily series to weekly/monthly using method.
+func AggregateSalesDailyTo(daily []struct {
+	Date  string
+	Sales float64
+}, granularity, method string) []AggregatedPoint {
+	econLike := make([]struct {
+		Date  string
+		Value float64
+	}, 0, len(daily))
+	for _, d := range daily {
+		econLike = append(econLike, struct {
+			Date  string
+			Value float64
+		}{Date: d.Date, Value: d.Sales})
+	}
+	return AggregateSeriesDailyTo(econLike, granularity, method)
 }
 
 // NewVectorStoreService は新しいVectorStoreServiceを初期化して返します
@@ -730,6 +851,110 @@ func (s *VectorStoreService) EnsureEconomicCollection(ctx context.Context) error
 	return nil
 }
 
+// EnsureEconomicAggregatesCollection ensures collection for aggregated economic series.
+func (s *VectorStoreService) EnsureEconomicAggregatesCollection(ctx context.Context) error {
+	collectionName := "economic_aggregates"
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return err
+	}
+	fieldType := qdrant.FieldType_FieldTypeKeyword
+	// symbol, granularity, method, period, start_date, end_date
+	fields := []string{"symbol", "granularity", "method", "period", "start_date", "end_date"}
+	for _, f := range fields {
+		ic, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if _, err := s.qdrantClient.CreateFieldIndex(ic, &qdrant.CreateFieldIndexCollection{CollectionName: collectionName, FieldName: f, FieldType: &fieldType}); err != nil {
+			log.Printf("ℹ️ %s index create (maybe exists): %v", f, err)
+		}
+		cancel()
+	}
+	return nil
+}
+
+// StoreEconomicAggregates upserts aggregated points.
+func (s *VectorStoreService) StoreEconomicAggregates(ctx context.Context, symbol, granularity, method string, points []AggregatedPoint) error {
+	ensureCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	if err := s.EnsureEconomicAggregatesCollection(ensureCtx); err != nil {
+		cancel()
+		return err
+	}
+	cancel()
+	zeroVec := make([]float32, 1536)
+	qpoints := make([]*qdrant.PointStruct, 0, len(points))
+	for _, pt := range points {
+		text := fmt.Sprintf("%s %s %s=%.4f", pt.Period, symbol, method, pt.Value)
+		payload := map[string]*qdrant.Value{
+			"type":        {Kind: &qdrant.Value_StringValue{StringValue: "economic_aggregate"}},
+			"symbol":      {Kind: &qdrant.Value_StringValue{StringValue: symbol}},
+			"granularity": {Kind: &qdrant.Value_StringValue{StringValue: granularity}},
+			"method":      {Kind: &qdrant.Value_StringValue{StringValue: method}},
+			"period":      {Kind: &qdrant.Value_StringValue{StringValue: pt.Period}},
+			"start_date":  {Kind: &qdrant.Value_StringValue{StringValue: pt.StartDate}},
+			"end_date":    {Kind: &qdrant.Value_StringValue{StringValue: pt.EndDate}},
+			"value":       {Kind: &qdrant.Value_DoubleValue{DoubleValue: pt.Value}},
+			"text":        {Kind: &qdrant.Value_StringValue{StringValue: text}},
+		}
+		rawID := fmt.Sprintf("%s:%s:%s:%s", symbol, granularity, method, pt.Period)
+		idStr := uuid.NewSHA1(uuid.NameSpaceURL, []byte(rawID)).String()
+		qpoints = append(qpoints, &qdrant.PointStruct{Id: &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: idStr}}, Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: zeroVec}}}, Payload: payload})
+	}
+	if len(qpoints) == 0 {
+		return nil
+	}
+	wait := true
+	uctx, cancel2 := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel2()
+	if _, err := s.qdrantClient.Upsert(uctx, &qdrant.UpsertPoints{CollectionName: "economic_aggregates", Points: qpoints, Wait: &wait}); err != nil {
+		return fmt.Errorf("upsert economic aggregates failed: %w", err)
+	}
+	log.Printf("✅ Stored %d economic %s aggregates for %s", len(qpoints), granularity, symbol)
+	return nil
+}
+
+// GetEconomicAggregatedSeries fetches aggregates for symbol and granularity within date range.
+func (s *VectorStoreService) GetEconomicAggregatedSeries(ctx context.Context, symbol string, start, end time.Time, granularity string) ([]AggregatedPoint, error) {
+	collectionName := "economic_aggregates"
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return nil, err
+	}
+	filter := &qdrant.Filter{Must: []*qdrant.Condition{
+		{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "type", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: "economic_aggregate"}}}}},
+		{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "symbol", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: symbol}}}}},
+		{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "granularity", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: strings.ToLower(granularity)}}}}},
+	}}
+	limit := uint32(100000)
+	withPayload := true
+	sctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	res, err := s.qdrantClient.Scroll(sctx, &qdrant.ScrollPoints{CollectionName: collectionName, Filter: filter, Limit: &limit, WithPayload: &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}}})
+	if err != nil {
+		return nil, fmt.Errorf("failed to scroll economic aggregates: %w", err)
+	}
+	startStr := start.Format("2006-01-02")
+	endStr := end.Format("2006-01-02")
+	out := make([]AggregatedPoint, 0, len(res.GetResult()))
+	for _, p := range res.GetResult() {
+		if p.Payload == nil {
+			continue
+		}
+		sd := getStringFromPayload(p.Payload, "start_date")
+		ed := getStringFromPayload(p.Payload, "end_date")
+		if sd == "" || ed == "" {
+			continue
+		}
+		// keep aggregates overlapping the window
+		if ed < startStr || sd > endStr {
+			continue
+		}
+		var v float64
+		if pv := p.Payload["value"]; pv != nil {
+			v = pv.GetDoubleValue()
+		}
+		out = append(out, AggregatedPoint{Period: getStringFromPayload(p.Payload, "period"), StartDate: sd, EndDate: ed, Value: v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartDate < out[j].StartDate })
+	return out, nil
+}
+
 // GetLatestEconomicDate returns the max date (YYYY-MM-DD) stored for a symbol.
 func (s *VectorStoreService) GetLatestEconomicDate(ctx context.Context, symbol string) (string, error) {
 	collectionName := "economic_daily_summaries"
@@ -779,7 +1004,10 @@ func (s *VectorStoreService) GetLatestEconomicDate(ctx context.Context, symbol s
 }
 
 // GetEconomicSeries fetches economic daily series for a symbol between start and end (inclusive), sorted by date asc.
-func (s *VectorStoreService) GetEconomicSeries(ctx context.Context, symbol string, start, end time.Time) ([]struct{ Date string; Value float64 }, error) {
+func (s *VectorStoreService) GetEconomicSeries(ctx context.Context, symbol string, start, end time.Time) ([]struct {
+	Date  string
+	Value float64
+}, error) {
 	collectionName := "economic_daily_summaries"
 	if err := s.ensureCollection(ctx, collectionName); err != nil {
 		return nil, err
@@ -807,17 +1035,29 @@ func (s *VectorStoreService) GetEconomicSeries(ctx context.Context, symbol strin
 	}
 	startStr := start.Format("2006-01-02")
 	endStr := end.Format("2006-01-02")
-	out := make([]struct{ Date string; Value float64 }, 0, len(res.GetResult()))
+	out := make([]struct {
+		Date  string
+		Value float64
+	}, 0, len(res.GetResult()))
 	for _, p := range res.GetResult() {
-		if p.Payload == nil { continue }
+		if p.Payload == nil {
+			continue
+		}
 		d := getStringFromPayload(p.Payload, "date")
-		if d == "" { continue }
-		if d < startStr || d > endStr { continue }
+		if d == "" {
+			continue
+		}
+		if d < startStr || d > endStr {
+			continue
+		}
 		var val float64
 		if v := p.Payload["value"]; v != nil {
 			val = v.GetDoubleValue()
 		}
-		out = append(out, struct{ Date string; Value float64 }{Date: d, Value: val})
+		out = append(out, struct {
+			Date  string
+			Value float64
+		}{Date: d, Value: val})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Date < out[j].Date })
 	return out, nil
@@ -908,6 +1148,108 @@ func (s *VectorStoreService) EnsureSalesCollection(ctx context.Context) error {
 	return nil
 }
 
+// EnsureSalesAggregatesCollection ensures collection for aggregated sales series.
+func (s *VectorStoreService) EnsureSalesAggregatesCollection(ctx context.Context) error {
+	collectionName := "sales_aggregates"
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return err
+	}
+	fieldType := qdrant.FieldType_FieldTypeKeyword
+	fields := []string{"product_id", "granularity", "method", "period", "start_date", "end_date"}
+	for _, f := range fields {
+		ic, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if _, err := s.qdrantClient.CreateFieldIndex(ic, &qdrant.CreateFieldIndexCollection{CollectionName: collectionName, FieldName: f, FieldType: &fieldType}); err != nil {
+			log.Printf("ℹ️ %s index create (maybe exists): %v", f, err)
+		}
+		cancel()
+	}
+	return nil
+}
+
+// StoreSalesAggregates upserts aggregated sales.
+func (s *VectorStoreService) StoreSalesAggregates(ctx context.Context, productID, granularity, method string, points []AggregatedPoint) error {
+	ensureCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	if err := s.EnsureSalesAggregatesCollection(ensureCtx); err != nil {
+		cancel()
+		return err
+	}
+	cancel()
+	zeroVec := make([]float32, 1536)
+	qpoints := make([]*qdrant.PointStruct, 0, len(points))
+	for _, pt := range points {
+		text := fmt.Sprintf("%s %s %s=%.4f", pt.Period, productID, method, pt.Value)
+		payload := map[string]*qdrant.Value{
+			"type":        {Kind: &qdrant.Value_StringValue{StringValue: "sales_aggregate"}},
+			"product_id":  {Kind: &qdrant.Value_StringValue{StringValue: productID}},
+			"granularity": {Kind: &qdrant.Value_StringValue{StringValue: granularity}},
+			"method":      {Kind: &qdrant.Value_StringValue{StringValue: method}},
+			"period":      {Kind: &qdrant.Value_StringValue{StringValue: pt.Period}},
+			"start_date":  {Kind: &qdrant.Value_StringValue{StringValue: pt.StartDate}},
+			"end_date":    {Kind: &qdrant.Value_StringValue{StringValue: pt.EndDate}},
+			"value":       {Kind: &qdrant.Value_DoubleValue{DoubleValue: pt.Value}},
+			"text":        {Kind: &qdrant.Value_StringValue{StringValue: text}},
+		}
+		rawID := fmt.Sprintf("%s:%s:%s:%s", productID, granularity, method, pt.Period)
+		idStr := uuid.NewSHA1(uuid.NameSpaceURL, []byte(rawID)).String()
+		qpoints = append(qpoints, &qdrant.PointStruct{Id: &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: idStr}}, Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: zeroVec}}}, Payload: payload})
+	}
+	if len(qpoints) == 0 {
+		return nil
+	}
+	wait := true
+	uctx, cancel2 := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel2()
+	if _, err := s.qdrantClient.Upsert(uctx, &qdrant.UpsertPoints{CollectionName: "sales_aggregates", Points: qpoints, Wait: &wait}); err != nil {
+		return fmt.Errorf("upsert sales aggregates failed: %w", err)
+	}
+	log.Printf("✅ Stored %d sales %s aggregates for %s", len(qpoints), granularity, productID)
+	return nil
+}
+
+// GetSalesAggregatedSeries fetches aggregates for product within date range.
+func (s *VectorStoreService) GetSalesAggregatedSeries(ctx context.Context, productID string, start, end time.Time, granularity string) ([]AggregatedPoint, error) {
+	collectionName := "sales_aggregates"
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return nil, err
+	}
+	filter := &qdrant.Filter{Must: []*qdrant.Condition{
+		{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "type", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: "sales_aggregate"}}}}},
+		{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "product_id", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: productID}}}}},
+		{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "granularity", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: strings.ToLower(granularity)}}}}},
+	}}
+	limit := uint32(100000)
+	withPayload := true
+	sctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	res, err := s.qdrantClient.Scroll(sctx, &qdrant.ScrollPoints{CollectionName: collectionName, Filter: filter, Limit: &limit, WithPayload: &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}}})
+	if err != nil {
+		return nil, fmt.Errorf("failed to scroll sales aggregates: %w", err)
+	}
+	startStr := start.Format("2006-01-02")
+	endStr := end.Format("2006-01-02")
+	out := make([]AggregatedPoint, 0, len(res.GetResult()))
+	for _, p := range res.GetResult() {
+		if p.Payload == nil {
+			continue
+		}
+		sd := getStringFromPayload(p.Payload, "start_date")
+		ed := getStringFromPayload(p.Payload, "end_date")
+		if sd == "" || ed == "" {
+			continue
+		}
+		if ed < startStr || sd > endStr {
+			continue
+		}
+		var v float64
+		if pv := p.Payload["value"]; pv != nil {
+			v = pv.GetDoubleValue()
+		}
+		out = append(out, AggregatedPoint{Period: getStringFromPayload(p.Payload, "period"), StartDate: sd, EndDate: ed, Value: v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartDate < out[j].StartDate })
+	return out, nil
+}
+
 // GetLatestSalesDate returns the max date (YYYY-MM-DD) stored for a product.
 func (s *VectorStoreService) GetLatestSalesDate(ctx context.Context, productID string) (string, error) {
 	collectionName := "sales_daily_series"
@@ -936,18 +1278,25 @@ func (s *VectorStoreService) GetLatestSalesDate(ctx context.Context, productID s
 	latest := ""
 	for _, p := range res.GetResult() {
 		d := getStringFromPayload(p.Payload, "date")
-		if d > latest { latest = d }
+		if d > latest {
+			latest = d
+		}
 	}
 	return latest, nil
 }
 
 // StoreSalesDailyBatch stores daily sales points for a product.
-func (s *VectorStoreService) StoreSalesDailyBatch(ctx context.Context, productID string, points []struct{ Date string; Sales float64 }) error {
+func (s *VectorStoreService) StoreSalesDailyBatch(ctx context.Context, productID string, points []struct {
+	Date  string
+	Sales float64
+}) error {
 	collectionName := "sales_daily_series"
 	// Ensure collection with timeout
 	ectx, cancelE := context.WithTimeout(ctx, 15*time.Second)
 	defer cancelE()
-	if err := s.EnsureSalesCollection(ectx); err != nil { return err }
+	if err := s.EnsureSalesCollection(ectx); err != nil {
+		return err
+	}
 
 	// Prepare points with zero vector
 	zeroVec := make([]float32, 1536)
@@ -969,7 +1318,9 @@ func (s *VectorStoreService) StoreSalesDailyBatch(ctx context.Context, productID
 			Payload: payload,
 		})
 	}
-	if len(qpoints) == 0 { return nil }
+	if len(qpoints) == 0 {
+		return nil
+	}
 	wait := true
 	uctx, cancelU := context.WithTimeout(ctx, 20*time.Second)
 	defer cancelU()
@@ -981,9 +1332,14 @@ func (s *VectorStoreService) StoreSalesDailyBatch(ctx context.Context, productID
 }
 
 // GetSalesSeries fetches sales daily series for a product between start and end.
-func (s *VectorStoreService) GetSalesSeries(ctx context.Context, productID string, start, end time.Time) ([]struct{ Date string; Sales float64 }, error) {
+func (s *VectorStoreService) GetSalesSeries(ctx context.Context, productID string, start, end time.Time) ([]struct {
+	Date  string
+	Sales float64
+}, error) {
 	collectionName := "sales_daily_series"
-	if err := s.ensureCollection(ctx, collectionName); err != nil { return nil, err }
+	if err := s.ensureCollection(ctx, collectionName); err != nil {
+		return nil, err
+	}
 	filter := &qdrant.Filter{
 		Must: []*qdrant.Condition{
 			{ConditionOneOf: &qdrant.Condition_Field{Field: &qdrant.FieldCondition{Key: "type", Match: &qdrant.Match{MatchValue: &qdrant.Match_Keyword{Keyword: "sales_daily"}}}}},
@@ -1000,17 +1356,31 @@ func (s *VectorStoreService) GetSalesSeries(ctx context.Context, productID strin
 		Limit:          &limit,
 		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: withPayload}},
 	})
-	if err != nil { return nil, fmt.Errorf("failed to scroll sales series: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("failed to scroll sales series: %w", err)
+	}
 	startStr := start.Format("2006-01-02")
 	endStr := end.Format("2006-01-02")
-	out := make([]struct{ Date string; Sales float64 }, 0, len(res.GetResult()))
+	out := make([]struct {
+		Date  string
+		Sales float64
+	}, 0, len(res.GetResult()))
 	for _, p := range res.GetResult() {
-		if p.Payload == nil { continue }
+		if p.Payload == nil {
+			continue
+		}
 		d := getStringFromPayload(p.Payload, "date")
-		if d == "" || d < startStr || d > endStr { continue }
+		if d == "" || d < startStr || d > endStr {
+			continue
+		}
 		var v float64
-		if pv := p.Payload["sales"]; pv != nil { v = pv.GetDoubleValue() }
-		out = append(out, struct{ Date string; Sales float64 }{Date: d, Sales: v})
+		if pv := p.Payload["sales"]; pv != nil {
+			v = pv.GetDoubleValue()
+		}
+		out = append(out, struct {
+			Date  string
+			Sales float64
+		}{Date: d, Sales: v})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Date < out[j].Date })
 	return out, nil
