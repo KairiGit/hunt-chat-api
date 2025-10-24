@@ -11,7 +11,7 @@
 
 - [概要](#概要)
 - [主要機能](#主要機能)
-- [技術スタック](#技術スタック)
+- [アーキテクチャ & 技術スタック](#アーキテクチャ--技術スタック)
 - [セットアップ](#セットアップ)
 - [使い方](#使い方)
 - [API仕様](#api仕様)
@@ -158,41 +158,31 @@ AI: (評価: 85点) → 完了
 
 ---
 
-## 技術スタック
+## アーキテクチャ & 技術スタック
 
-### フロントエンド
+本システムは、Next.jsによるUIとGoによるAPIサーバーで構成されています。
 
-| 技術 | バージョン | 用途 |
-|------|----------|------|
-| Next.js | 14.2+ | フレームワーク |
-| React | 18+ | UIライブラリ |
-| TypeScript | 5.0+ | 型安全性 |
-| Tailwind CSS | 3.4+ | スタイリング |
-| Radix UI | - | UIコンポーネント |
+### Primary API (Go)
+メインのAPIサーバーです。統計処理やAIとの連携など、コアなビジネスロジックを担当します。
 
-### バックエンド
+- **言語**: Go (1.21+)
+- **フレームワーク**: Gin (1.10+)
+- **デプロイ**: Vercel (Serverless Function)
 
-| 技術 | バージョン | 用途 |
-|------|----------|------|
-| Go | 1.21+ | サーバー |
-| Gin | 1.10+ | Webフレームワーク |
-| Azure OpenAI | GPT-4.1 | AI生成 |
-| Azure OpenAI | text-embedding-3-small | ベクトル化 |
+### Frontend & BFF (Next.js)
+ユーザーが操作するUIと、Go APIへのプロキシとして機能するBFF（Backend for Frontend）です。
 
-### データベース
+- **フレームワーク**: Next.js (15.5+, App Router)
+- **UI**: React (18+), TypeScript, Tailwind CSS, shadcn/ui
+- **デプロイ**: Vercel
 
-| 技術 | バージョン | 用途 |
-|------|----------|------|
-| Qdrant | 1.7+ | ベクトルDB |
-| Docker | 24+ | コンテナ |
+### AI & Vector Database
+AI機能とベクトル検索を支えるサービス群です。
 
-### デプロイ
+- **AI**: Azure OpenAI (GPT-4, text-embedding-3-small)
+- **ベクトルDB**: Qdrant (クラウドサービス)
+- **ローカル開発**: Docker
 
-| 環境 | プラットフォーム |
-|------|-----------------|
-| フロント | Vercel |
-| バックエンド | Docker + VPS |
-| Qdrant | Docker Compose |
 
 ---
 
