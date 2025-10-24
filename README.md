@@ -176,8 +176,8 @@ AI: (評価: 85点) → 完了
 |------|----------|------|
 | Go | 1.21+ | サーバー |
 | Gin | 1.10+ | Webフレームワーク |
-| Azure OpenAI | GPT-4 | AI生成 |
-| text-embedding-3-small | - | ベクトル化 |
+| Azure OpenAI | GPT-4.1 | AI生成 |
+| Azure OpenAI | text-embedding-3-small | ベクトル化 |
 
 ### データベース
 
