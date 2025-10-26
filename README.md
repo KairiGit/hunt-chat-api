@@ -1,4 +1,5 @@
 # 🏭 HUNT - AI需要予測システム
+![logo](/public/img/HUNT-logo.jpeg)
 
 **製造業向けの次世代需要予測・異常検知・学習システム**
 
