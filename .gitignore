@@ -17,6 +17,8 @@
 /.next/
 /out/
 
+
+
 # production
 /build
 
@@ -49,3 +51,11 @@ storybook-static
 # Qdrant storage
 qdrant_storage/
 *.qdrant
+
+
+.devcontainer/setup.log
+.air.toml
+tmp/
+bin/
+build-errors.log
+.vscode/settings.json

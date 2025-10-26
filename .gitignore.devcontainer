@@ -1,7 +1,0 @@
-# Add to existing .gitignore
-.devcontainer/setup.log
-.air.toml
-tmp/
-bin/
-build-errors.log
-.vscode/settings.json
