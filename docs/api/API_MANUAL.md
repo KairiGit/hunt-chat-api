@@ -23,6 +23,11 @@ curl -X POST \
   -H "X-API-KEY: YOUR_SECRET_API_KEY" \
   https://hunt-chat-api.vercel.app/api/v1/...
 ```
+```sh
+curl -X POST -H "Content-Type: application/json" -H "X-API-KEY: 
+     YOUR_SECRET_API_KEY" -d '{"chat_message": "こんにちは"}'
+     'https://hunt-chat-api.vercel.app/api/v1/ai/chat-input'
+```
 
 正しいAPIキーが提供されない場合、サーバーは `401 Unauthorized` エラーを返します。
 

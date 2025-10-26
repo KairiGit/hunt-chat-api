@@ -465,6 +465,9 @@ npm test
 - [データ集約分析](./docs/guides/DATA_AGGREGATION_GUIDE.md) - 日次・週次・月次分析
 - [経済データ相関分析](./docs/implementation/ECONOMIC_CORRELATION_IMPLEMENTATION.md) - 日経平均、為替、原油価格
 
+#### 🔧 連携ガイド
+- [外部Next.jsアプリケーションとの連携](./docs/guides/NEXT_APP_INTEGRATION.md) - 外部アプリからAPIを呼び出す手順
+
 #### 🔧 実装・最適化
 - [最終実装サマリー](./docs/implementation/FINAL_IMPLEMENTATION_SUMMARY.md) - 相関分析最適化（上位3件表示）
 - [非同期化完了](./docs/implementation/ASYNC_IMPLEMENTATION_COMPLETE.md) - 70%高速化達成 🆕
