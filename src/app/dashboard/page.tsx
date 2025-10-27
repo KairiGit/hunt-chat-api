@@ -41,7 +41,7 @@ const DashboardPage = () => {
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/proxy/monitoring/logs?period=${period}`);
+      const response = await fetch(`/api/proxy/dashboard?period=${period}`);
       if (!response.ok) throw new Error('Failed to fetch dashboard data');
       const result: DashboardData = await response.json();
       setData(result);
