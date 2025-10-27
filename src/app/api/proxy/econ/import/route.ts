@@ -22,8 +22,5 @@ export async function POST(request: Request) {
   return proxyRequest('/api/v1/econ/import', {
     method: 'POST',
     body: body,
-    headers: {
-      'Content-Type': contentType,
-    },
   });
 }

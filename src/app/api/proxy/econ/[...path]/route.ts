@@ -24,9 +24,6 @@ async function proxy(method: string, request: NextRequest, segments: string[]) {
   return proxyRequest(endpoint, {
     method,
     body,
-    headers: {
-      'Content-Type': contentType,
-    },
     searchParams: url.searchParams,
   });
 }
