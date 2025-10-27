@@ -9,7 +9,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const contentType = request.headers.get('content-type') || '';
-  let body: any;
+  let body: string | FormData | Record<string, unknown>;
 
   if (contentType.includes('application/json')) {
     body = await request.json();

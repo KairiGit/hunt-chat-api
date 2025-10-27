@@ -9,7 +9,7 @@ async function proxy(method: string, request: NextRequest, segments: string[]) {
   const endpoint = `/api/v1/econ/${rest}`;
 
   const contentType = request.headers.get('content-type') || '';
-  let body: any;
+  let body: string | FormData | Record<string, unknown> | undefined;
 
   if (method !== 'GET') {
     if (contentType.includes('application/json')) {

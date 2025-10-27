@@ -49,7 +49,7 @@ export async function proxyRequest(
   endpoint: string,
   options: {
     method?: string;
-    body?: Record<string, unknown> | Array<unknown>;
+    body?: string | FormData | Record<string, unknown> | Array<unknown>;
     headers?: Record<string, string>;
     searchParams?: URLSearchParams;
   } = {}
