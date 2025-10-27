@@ -21,17 +21,13 @@ func main() {
 
 	// 設定の読み込み
 	cfg := config.LoadConfig()
-	// ログにAPIキーとエンドポイントを出力（デバッグ用）
-	log.Printf("DEBUG: Loaded AZURE_OPENAI_API_KEY (first 10 chars): %s...", cfg.AzureOpenAIAPIKey[:min(10, len(cfg.AzureOpenAIAPIKey))])
-	log.Printf("DEBUG: Loaded AZURE_OPENAI_ENDPOINT: %s", cfg.AzureOpenAIEndpoint)
+
 
 	// Ginルーターの初期化
 	r := gin.Default()
 
-	// CORSミドルウェアの設定
-	r.Use(cors.Default())
-
 	// サービスの初期化
+	monitoringService := services.NewMonitoringService()
 	azureOpenAIService := services.NewAzureOpenAIService(
 		cfg.AzureOpenAIEndpoint,
 		cfg.AzureOpenAIAPIKey,
@@ -42,15 +38,9 @@ func main() {
 	vectorStoreService, err := services.NewVectorStoreService(azureOpenAIService, cfg.QdrantURL, cfg.QdrantAPIKey)
 	if err != nil {
 		log.Printf("FATAL: Failed to initialize VectorStoreService: %v", err)
-		// Continue running without vector store for now
 	}
-
-	// 経済データサービスの初期化
 	economicSymbolMapping := map[string]string{
 		"NIKKEI": "moc/nikkei_daily.csv",
-		// 追加の経済指標はここに追加
-		// "USDJPY": "data/econ/usdjpy.csv",
-		// "WTI": "data/econ/wti.csv",
 	}
 	economicService := services.NewEconomicService("", economicSymbolMapping)
 
@@ -59,16 +49,20 @@ func main() {
 	demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
 	aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), economicService, demandForecastHandler.GetDemandForecastService(), vectorStoreService)
 	economicHandler := handlers.NewEconomicHandler(vectorStoreService)
+	adminHandler := handlers.NewAdminHandler(cfg)
+	monitoringHandler := handlers.NewMonitoringHandler(monitoringService)
+
+	// ミドルウェアの登録
+	r.Use(monitoringService.LoggingMiddleware()) // ロギングミドルウェアをグローバルに適用
+	r.Use(cors.Default())
 
 	// 認証ミドルウェア
 	authMiddleware := func(apiKey string) gin.HandlerFunc {
 		return func(c *gin.Context) {
-			// APIキーがデフォルト値の場合は認証をスキップ（ローカル開発を容易にするため）
 			if apiKey == "" || apiKey == "default_secret_key" {
 				c.Next()
 				return
 			}
-
 			providedKey := c.GetHeader("X-API-KEY")
 			if providedKey != apiKey {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
@@ -79,22 +73,31 @@ func main() {
 	}
 
 	// ヘルスチェックエンドポイント
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "healthy",
-			"service": "HUNT Chat-API",
-		})
-	})
+	r.GET("/health", handlers.HealthCheck)
 
 	// APIバージョン1のルートグループ
 	v1 := r.Group("/api/v1")
-	v1.Use(authMiddleware(cfg.APIKey)) // ミドルウェアをグループに適用
+	v1.Use(authMiddleware(cfg.APIKey))
 	{
 		v1.GET("/hello", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"message": "Hello from HUNT Chat-API!",
 			})
 		})
+
+		// 管理者向けAPI
+		admin := v1.Group("/admin")
+		{
+			admin.GET("/health-status", adminHandler.GetHealthStatus)
+			admin.POST("/maintenance/start", adminHandler.StartMaintenance)
+			admin.POST("/maintenance/stop", adminHandler.StopMaintenance)
+		}
+
+		// モニタリングAPI
+		monitoring := v1.Group("/monitoring")
+		{
+			monitoring.GET("/logs", monitoringHandler.GetLogs)
+		}
 
 		// 気象データAPI
 		weather := v1.Group("/weather")
@@ -180,9 +183,17 @@ func main() {
 			econ.POST("/aggregate", economicHandler.AggregateEconomic)
 			econ.POST("/sales/aggregate", economicHandler.AggregateSales)
 		}
-	} // サーバー起動
+	}
+
 	log.Println("Starting HUNT Chat-API server on :8080")
 	if err := r.Run(":8080"); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -18,6 +18,8 @@ type Config struct {
 	QdrantURL                          string
 	QdrantAPIKey                       string
 	APIKey                             string
+	AdminUsername                      string
+	AdminPassword                      string
 }
 
 // LoadConfig loads configuration from environment variables
@@ -35,6 +37,8 @@ func LoadConfig() *Config {
 		QdrantURL:                          getEnv("QDRANT_URL", "127.0.0.1:6334"),
 		QdrantAPIKey:                       getEnv("QDRANT_API_KEY", ""),
 		APIKey:                             getEnv("API_KEY", "default_secret_key"), // 開発用のデフォルトキー
+		AdminUsername:                      getEnv("ADMIN_USERNAME", "admin"),
+		AdminPassword:                      getEnv("ADMIN_PASSWORD", "admin_password"),
 	}
 }
 
