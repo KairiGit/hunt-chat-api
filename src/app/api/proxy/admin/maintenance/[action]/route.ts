@@ -3,8 +3,9 @@ import { NextRequest } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: NextRequest, context: { params: { action: string } }) {
-  const { action } = context.params;
+export async function POST(request: NextRequest, context: { params: Promise<{ action: string }> }) {
+  const params = await context.params;
+  const action = params.action;
   const body = await request.json();
 
   if (action !== 'start' && action !== 'stop') {
