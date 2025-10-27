@@ -84,7 +84,13 @@ export async function proxyRequest(
 
     // Content-Typeの設定
     if (options.body && !headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json');
+      if (options.body instanceof FormData) {
+        // FormDataの場合は何もしない（fetchが自動で設定する）
+      } else if (typeof options.body === 'string') {
+        headers.set('Content-Type', 'text/plain; charset=utf-8');
+      } else {
+        headers.set('Content-Type', 'application/json');
+      }
     }
 
     // リクエストオプション
@@ -95,7 +101,13 @@ export async function proxyRequest(
 
     // ボディがある場合は追加
     if (options.body) {
-      fetchOptions.body = JSON.stringify(options.body);
+      if (options.body instanceof FormData) {
+        fetchOptions.body = options.body;
+      } else if (typeof options.body === 'string') {
+        fetchOptions.body = options.body;
+      } else {
+        fetchOptions.body = JSON.stringify(options.body);
+      }
     }
 
     console.log('[Proxy] Request options:', {
@@ -109,7 +121,14 @@ export async function proxyRequest(
     
     const duration = Date.now() - startTime;
     console.log(`[Proxy] Response status: ${response.status} (${duration}ms)`);
-    console.log('[Proxy] Content-Type:', response.headers.get('Content-Type'));
+    const contentType = response.headers.get('Content-Type');
+    console.log('[Proxy] Content-Type:', contentType);
+
+    // Content-TypeがJSONでない場合は、そのままレスポンスを返す
+    if (!contentType || !contentType.includes('application/json')) {
+      console.log('[Proxy] Non-JSON response. Streaming back.');
+      return response;
+    }
 
     // レスポンステキストを取得（デバッグ用）
     const responseText = await response.text();
