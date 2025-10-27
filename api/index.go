@@ -35,12 +35,8 @@ func setupApp() *gin.Engine {
 		// Ginルーターの初期化
 		r := gin.Default()
 
-		// CORSミドルウェアの設定
-		config := cors.DefaultConfig()
-		config.AllowAllOrigins = true // VercelのプレビューURLなど、あらゆるオリジンを許可
-		r.Use(cors.New(config))
-
 		// サービスの初期化
+		monitoringService := services.NewMonitoringService()
 		azureOpenAIService := services.NewAzureOpenAIService(
 			cfg.AzureOpenAIEndpoint,
 			cfg.AzureOpenAIAPIKey,
@@ -51,38 +47,39 @@ func setupApp() *gin.Engine {
 		vectorStoreService, err := services.NewVectorStoreService(azureOpenAIService, cfg.QdrantURL, cfg.QdrantAPIKey)
 		if err != nil {
 			log.Printf("FATAL: Failed to initialize VectorStoreService in Vercel function: %v", err)
-			// The service will be nil, handlers should handle this.
 		}
 
 		// ハンドラーの初期化
 		weatherHandler := handlers.NewWeatherHandler()
 		demandForecastHandler := handlers.NewDemandForecastHandler(weatherHandler.GetWeatherService())
-
-		// 経済データサービスの初期化（Vercel環境用）
 		economicSymbolMapping := map[string]string{
 			"NIKKEI": "moc/nikkei_daily.csv",
 		}
 		economicService := services.NewEconomicService(".", economicSymbolMapping)
-
 		economicHandler := handlers.NewEconomicHandler(vectorStoreService)
-		aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), economicService, demandForecastHandler.GetDemandForecastService(), vectorStoreService) // 認証ミドルウェア
+		aiHandler := handlers.NewAIHandler(azureOpenAIService, weatherHandler.GetWeatherService(), economicService, demandForecastHandler.GetDemandForecastService(), vectorStoreService)
+		adminHandler := handlers.NewAdminHandler(cfg)
+		monitoringHandler := handlers.NewMonitoringHandler(monitoringService)
+
+		// ミドルウェアの登録
+		r.Use(monitoringService.LoggingMiddleware())
+		config := cors.DefaultConfig()
+		config.AllowAllOrigins = true
+		r.Use(cors.New(config))
+
+		// 認証ミドルウェア
 		authMiddleware := func(apiKey string) gin.HandlerFunc {
 			return func(c *gin.Context) {
-				// Vercel環境では一時的に認証をスキップ（デバッグ用）
-				// TODO: 本番環境では必ず認証を有効化すること
 				if apiKey == "" || apiKey == "default_secret_key" {
 					c.Next()
 					return
 				}
-
 				providedKey := c.GetHeader("X-API-KEY")
-				// API Keyが提供されていない場合も一時的に許可（デバッグ用）
 				if providedKey == "" {
 					log.Printf("⚠️ [認証] API Keyが提供されていません。一時的に許可します。")
 					c.Next()
 					return
 				}
-
 				if providedKey != apiKey {
 					log.Printf("❌ [認証] 無効なAPI Key: %s", providedKey)
 					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
@@ -93,17 +90,29 @@ func setupApp() *gin.Engine {
 		}
 
 		// ヘルスチェックエンドポイント
-		r.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "healthy", "version": "2025-10-16-anomaly-save-fix-v1"})
-		})
+		r.GET("/health", handlers.HealthCheck)
 
 		// APIルートの定義
 		v1 := r.Group("/api/v1")
-		v1.Use(authMiddleware(cfg.APIKey)) // ミドルウェアをグループに適用
+		v1.Use(authMiddleware(cfg.APIKey))
 		{
 			v1.GET("/hello", func(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"message": "Hello from Vercel!"})
 			})
+
+			// 管理者向けAPI
+			admin := v1.Group("/admin")
+			{
+				admin.GET("/health-status", adminHandler.GetHealthStatus)
+				admin.POST("/maintenance/start", adminHandler.StartMaintenance)
+				admin.POST("/maintenance/stop", adminHandler.StopMaintenance)
+			}
+
+			// モニタリングAPI
+			monitoring := v1.Group("/monitoring")
+			{
+				monitoring.GET("/logs", monitoringHandler.GetLogs)
+			}
 
 			// 気象データAPI
 			weather := v1.Group("/weather")
@@ -111,25 +120,21 @@ func setupApp() *gin.Engine {
 				weather.GET("/test", weatherHandler.TestWeatherAPI)
 				weather.GET("/regions", weatherHandler.GetRegionCodes)
 				weather.GET("/forecast/:regionCode", weatherHandler.GetForecastData)
-				weather.GET("/forecast", weatherHandler.GetForecastData) // デフォルト：東京
+				weather.GET("/forecast", weatherHandler.GetForecastData)
 				weather.GET("/tokyo", weatherHandler.GetTokyoWeatherData)
 				weather.GET("/region/:regionCode", weatherHandler.GetWeatherByRegion)
-
-				// 過去データAPI
 				weather.GET("/historical/:regionCode", weatherHandler.GetHistoricalWeatherData)
-				weather.GET("/historical", weatherHandler.GetHistoricalWeatherData) // デフォルト：東京
+				weather.GET("/historical", weatherHandler.GetHistoricalWeatherData)
 				weather.GET("/historical/:regionCode/date", weatherHandler.GetHistoricalWeatherDataByDate)
 				weather.GET("/historical/:regionCode/range", weatherHandler.GetHistoricalWeatherDataRange)
 				weather.GET("/historical-range", weatherHandler.GetAvailableHistoricalDataRange)
-
-				// 三重県鈴鹿市専用API
 				weather.GET("/suzuka/monthly", weatherHandler.GetSuzukaMonthlyWeatherSummary)
 				weather.GET("/analysis/:regionCode", weatherHandler.GetWeatherDataAnalysis)
-				weather.GET("/analysis", weatherHandler.GetWeatherDataAnalysis) // デフォルト：三重県
+				weather.GET("/analysis", weatherHandler.GetWeatherDataAnalysis)
 				weather.GET("/trends/:regionCode", weatherHandler.GetWeatherTrendAnalysis)
-				weather.GET("/trends", weatherHandler.GetWeatherTrendAnalysis) // デフォルト：三重県
+				weather.GET("/trends", weatherHandler.GetWeatherTrendAnalysis)
 				weather.GET("/category/:regionCode", weatherHandler.GetWeatherDataByCategory)
-				weather.GET("/category", weatherHandler.GetWeatherDataByCategory) // デフォルト：三重県
+				weather.GET("/category", weatherHandler.GetWeatherDataByCategory)
 			}
 
 			// 需要予測API
@@ -139,10 +144,10 @@ func setupApp() *gin.Engine {
 				demand.GET("/forecast/suzuka", demandForecastHandler.GetDemandForecastForSuzuka)
 				demand.GET("/settings", demandForecastHandler.GetDemandForecastSettings)
 				demand.GET("/insights/:regionCode", demandForecastHandler.GetDemandInsights)
-				demand.GET("/insights", demandForecastHandler.GetDemandInsights) // デフォルト：三重県
+				demand.GET("/insights", demandForecastHandler.GetDemandInsights)
 				demand.GET("/analytics/:regionCode", demandForecastHandler.GetDemandAnalytics)
-				demand.GET("/analytics", demandForecastHandler.GetDemandAnalytics) // デフォルト：三重県
-				demand.GET("/anomalies", demandForecastHandler.DetectAnomalies)    // 異常検知
+				demand.GET("/analytics", demandForecastHandler.GetDemandAnalytics)
+				demand.GET("/anomalies", demandForecastHandler.DetectAnomalies)
 			}
 
 			// AI統合API
@@ -153,39 +158,28 @@ func setupApp() *gin.Engine {
 				ai.POST("/demand-insights", aiHandler.GenerateDemandInsights)
 				ai.POST("/predict-demand", aiHandler.PredictDemandWithAI)
 				ai.POST("/explain-forecast", aiHandler.ExplainForecast)
-				ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion) // 異常から質問を生成
+				ai.GET("/generate-question", aiHandler.GenerateAnomalyQuestion)
 				ai.POST("/chat-input", aiHandler.ChatInput)
 				ai.POST("/analyze-file", func(c *gin.Context) {
 					log.Printf("🟢 [api/index.go] /analyze-file エンドポイント呼び出し - Build: 2025-10-16-anomaly-save-fix-v1")
-
-					// 🔍 診断: リクエストがここまで到達していることを確認
 					c.Header("X-Backend-Version", "2025-10-16-anomaly-save-fix-v1")
 					c.Header("X-Handler-Called", "true")
-
 					aiHandler.AnalyzeFile(c)
 				})
-
-				// 売上予測・分析API
-				ai.POST("/predict-sales", aiHandler.PredictSales)             // 売上予測API
-				ai.POST("/forecast-product", aiHandler.ForecastProductDemand) // 製品別需要予測API
-				ai.POST("/analyze-weekly", aiHandler.AnalyzeWeeklySales)      // 週次分析API
-
-				// 異常検知・学習機能API
-				ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)                        // 異常検知実行
-				ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)                           // 異常対応保存 (単数形)
-				ai.POST("/anomaly-response-with-followup", aiHandler.SaveAnomalyResponseWithFollowUp) // 深掘り対応版
-				ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)                           // 異常対応履歴取得 (複数形)
-				ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)                   // 異常対応削除
-				ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses)                  // すべての異常対応削除
-				ai.GET("/learning-insights", aiHandler.GetLearningInsights)                           // 学習洞察取得
-
-				// 分析レポートAPI
+				ai.POST("/predict-sales", aiHandler.PredictSales)
+				ai.POST("/forecast-product", aiHandler.ForecastProductDemand)
+				ai.POST("/analyze-weekly", aiHandler.AnalyzeWeeklySales)
+				ai.POST("/detect-anomalies", aiHandler.DetectAnomaliesInSales)
+				ai.POST("/anomaly-response", aiHandler.SaveAnomalyResponse)
+				ai.POST("/anomaly-response-with-followup", aiHandler.SaveAnomalyResponseWithFollowUp)
+				ai.GET("/anomaly-responses", aiHandler.GetAnomalyResponses)
+				ai.DELETE("/anomaly-response/:id", aiHandler.DeleteAnomalyResponse)
+				ai.DELETE("/anomaly-responses", aiHandler.DeleteAllAnomalyResponses)
+				ai.GET("/learning-insights", aiHandler.GetLearningInsights)
 				ai.GET("/analysis-reports", aiHandler.ListAnalysisReports)
 				ai.GET("/analysis-report", aiHandler.GetAnalysisReport)
 				ai.DELETE("/analysis-report", aiHandler.DeleteAnalysisReport)
 				ai.DELETE("/analysis-reports", aiHandler.DeleteAllAnalysisReports)
-
-				// 未回答の異常取得API
 				ai.GET("/unanswered-anomalies", aiHandler.GetUnansweredAnomalies)
 			}
 

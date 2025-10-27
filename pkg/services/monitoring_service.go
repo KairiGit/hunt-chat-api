@@ -66,10 +66,10 @@ func (s *MonitoringService) LoggingMiddleware() gin.HandlerFunc {
 // DashboardData はダッシュボードに表示するための集計済みデータです。
 type DashboardData struct {
 	RequestsOverTime []map[string]interface{} `json:"requestsOverTime"`
-	Endpoints        map[string]int             `json:"endpoints"`
+	Endpoints        map[string]int           `json:"endpoints"`
 	StatusCodes      []map[string]interface{} `json:"statusCodes"`
 	AvgResponseTimes []map[string]interface{} `json:"avgResponseTimes"`
-	RecentErrors     []LogEntry                 `json:"recentErrors"`
+	RecentErrors     []LogEntry               `json:"recentErrors"`
 }
 
 // GetDashboardData は指定された期間のログを集計してダッシュボード用データを返します。

@@ -22,7 +22,6 @@ func main() {
 	// 設定の読み込み
 	cfg := config.LoadConfig()
 
-
 	// Ginルーターの初期化
 	r := gin.Default()
 
