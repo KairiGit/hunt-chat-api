@@ -1,8 +1,16 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { cn } from '@/lib/utils';
+import mermaid from 'mermaid';
+
+// Mermaidの初期設定
+mermaid.initialize({
+  startOnLoad: false, // 自動実行はしない
+  theme: 'neutral', // 'dark', 'forest' なども選択可能
+  securityLevel: 'loose',
+});
 
 interface MarkdownProps {
   children: string;
@@ -10,6 +18,17 @@ interface MarkdownProps {
 }
 
 export function Markdown({ children, className }: MarkdownProps) {
+  // childrenが変更されたらMermaidを実行
+  useEffect(() => {
+    try {
+      mermaid.run({
+        nodes: document.querySelectorAll('.language-mermaid'),
+      });
+    } catch (e) {
+      console.error('Mermaid rendering error:', e);
+    }
+  }, [children]);
+
   return (
     <div className={cn('prose prose-sm max-w-none', className)}>
       <ReactMarkdown
@@ -68,6 +87,17 @@ export function Markdown({ children, className }: MarkdownProps) {
           className?: string;
           children?: React.ReactNode;
         }) => {
+          const match = /language-(\w+)/.exec(className || '');
+          const lang = match && match[1];
+
+          if (lang === 'mermaid') {
+            return (
+              <pre className="language-mermaid" {...props}>
+                {String(children)}
+              </pre>
+            );
+          }
+
           return inline ? (
             <code
               className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200 font-mono text-sm"
