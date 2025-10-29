@@ -44,6 +44,18 @@ func main() {
 
 	ctx := context.Background()
 
+	// コレクション名を固定
+	const collectionName = "hunt_documents"
+
+	// 先に既存のシステムドキュメントをすべて削除
+	log.Printf("🗑️ コレクション '%s' から既存のシステムドキュメントを削除します...", collectionName)
+	if err := vectorStoreService.DeleteDocumentsByType(ctx, collectionName, "system_documentation"); err != nil {
+		// エラーが発生しても処理を続行する（コレクションが存在しない場合など）
+		log.Printf("既存ドキュメントの削除中に警告: %v", err)
+	} else {
+		log.Println("✅ 既存のシステムドキュメントを削除しました。")
+	}
+
 	// システムドキュメントのリスト（新しいディレクトリ構造に対応）
 	docs := []string{
 		"README.md",
@@ -79,10 +91,6 @@ func main() {
 			continue
 		}
 
-		// ドキュメントをベクトルDBに保存
-		// コレクション名から "/" を "_" に置換（Qdrantの制約）
-		sanitizedName := strings.ReplaceAll(docName, "/", "_")
-		collectionName := fmt.Sprintf("system_doc_%s", sanitizedName)
 		docText := string(content)
 
 		// 長い文書を分割 (約6000文字ごと、安全マージンを考慮)
@@ -91,16 +99,12 @@ func main() {
 
 		log.Printf("  📦 %d個のチャンクに分割", len(chunks))
 
-		// 古いドキュメントのチャンクを削除（重複防止）
-		if err := vectorStoreService.DeleteDocumentByFileName(ctx, collectionName, docName); err != nil {
-			log.Printf("  ⚠️ 古いドキュメントの削除に失敗（続行します）: %v", err)
-		} else {
-			log.Printf("  🗑️ 古いドキュメントを削除しました")
-		}
-
 		chunkSuccess := 0
 		for i, chunk := range chunks {
-			documentID := uuid.New().String() // 有効なUUIDを生成
+			// ドキュメントIDをファイル名とチャンクインデックスから決定論的に生成
+			idSource := fmt.Sprintf("%s-chunk-%d", docName, i)
+			documentID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(idSource)).String()
+
 			metadata := map[string]interface{}{
 				"type":         "system_documentation",
 				"file_name":    docName,

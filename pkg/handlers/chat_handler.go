@@ -105,30 +105,30 @@ func (ah *AIHandler) ChatInput(c *gin.Context) {
 		log.Printf("📚 %d件の関連する過去の会話を取得しました", len(chatHistory))
 	}
 
-	// 一般的なドキュメント検索（hunt_chat_documentsから）
-	searchResults, err := ah.vectorStoreService.Search(ctx, req.ChatMessage, 2)
+	// 🔍 統一コレクション 'hunt_documents' から関連ドキュメントを検索
+	log.Println("🔍 統一コレクション 'hunt_documents' を検索します...")
+	searchResults, err := ah.vectorStoreService.Search(ctx, req.ChatMessage, 3) // 検索件数を3に増やす
 	if err != nil {
 		log.Printf("ベクトル検索に失敗: %v", err)
 	} else if len(searchResults) > 0 {
-		ragContext.WriteString("\n\n## 関連するドキュメント:\n")
+		ragContext.WriteString("\n\n## 関連ドキュメント情報:\n")
+		log.Printf("📚 %d件の関連ドキュメントを 'hunt_documents' から取得しました", len(searchResults))
 		for _, point := range searchResults {
+			fileName := "不明なドキュメント"
+			if fn, ok := point.Payload["file_name"]; ok {
+				fileName = fn.GetStringValue()
+			}
+
+			// コンテキストソースにも詳細を追加
+			contextSources = append(contextSources, models.ContextSource{
+				Type:     "document",
+				FileName: fileName,
+				Score:    point.Score,
+			})
+
 			if textPayload, ok := point.Payload["text"]; ok {
 				if text, ok := textPayload.GetKind().(*qdrant.Value_StringValue); ok {
-					ragContext.WriteString(fmt.Sprintf("- %s (類似度: %.2f)\n", text.StringValue, point.Score))
-
-					// ファイル名を取得（メタデータから）
-					fileName := "ドキュメント"
-					if fileNamePayload, ok := point.Payload["file_name"]; ok {
-						if fileNameVal, ok := fileNamePayload.GetKind().(*qdrant.Value_StringValue); ok {
-							fileName = fileNameVal.StringValue
-						}
-					}
-
-					contextSources = append(contextSources, models.ContextSource{
-						Type:     "document",
-						FileName: fileName,
-						Score:    point.Score,
-					})
+					ragContext.WriteString(fmt.Sprintf("- [%s] %s (類似度: %.2f)\n", fileName, text.StringValue, point.Score))
 				}
 			}
 		}

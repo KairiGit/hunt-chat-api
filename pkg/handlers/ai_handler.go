@@ -1074,7 +1074,7 @@ func (ah *AIHandler) DeleteAnalysisReport(c *gin.Context) {
 		return
 	}
 
-	err := ah.vectorStoreService.DeletePoint(c.Request.Context(), "hunt_chat_documents", reportID)
+	err := ah.vectorStoreService.DeletePoint(c.Request.Context(), "hunt_documents", reportID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,

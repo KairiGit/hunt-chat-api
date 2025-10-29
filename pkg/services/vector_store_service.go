@@ -61,7 +61,7 @@ func NewVectorStoreService(azureOpenAIService *AzureOpenAIService, qdrantURL str
 	qdrantPointsClient := qdrant.NewPointsClient(conn)
 	qdrantCollectionsClient := qdrant.NewCollectionsClient(conn)
 
-	collectionName := "hunt_chat_documents"
+	collectionName := "hunt_documents"
 	vectorSize := uint64(1536) // text-embedding-3-smallの次元数
 
 	// Qdrantサーバーが完全に起動するまでリトライしながらコレクションの存在確認を行う
@@ -172,7 +172,7 @@ func (s *VectorStoreService) Save(ctx context.Context, text string, metadata map
 	}
 
 	// 4. QdrantにUpsert
-	collectionName := "hunt_chat_documents"
+	collectionName := "hunt_documents"
 	waitUpsert := true
 	_, err = s.qdrantClient.Upsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: collectionName,
@@ -197,7 +197,7 @@ func (s *VectorStoreService) Search(ctx context.Context, queryText string, topK 
 	}
 
 	// 2. Qdrantで類似ベクトルを検索
-	collectionName := "hunt_chat_documents"
+	collectionName := "hunt_documents"
 	withPayload := true
 	searchResult, err := s.qdrantClient.Search(ctx, &qdrant.SearchPoints{
 		CollectionName: collectionName,
@@ -244,7 +244,7 @@ func (s *VectorStoreService) SearchAnalysisReports(ctx context.Context, query st
 	}
 
 	// typeフィルタを追加
-	collectionName := "hunt_chat_documents"
+	collectionName := "hunt_documents"
 	withPayload := true
 
 	// Qdrantのフィルタ条件を構築
@@ -282,7 +282,7 @@ func (s *VectorStoreService) SearchAnalysisReports(ctx context.Context, query st
 
 // GetAllAnalysisReportHeaders はすべての分析レポートのヘッダー情報を取得します
 func (s *VectorStoreService) GetAllAnalysisReportHeaders(ctx context.Context) ([]models.AnalysisReportHeader, error) {
-	collectionName := "hunt_chat_documents"
+	collectionName := "hunt_documents"
 	points, err := s.ScrollAllPoints(ctx, collectionName, 1000) // 最大1000件まで取得
 	if err != nil {
 		return nil, fmt.Errorf("レポートの取得に失敗: %w", err)
@@ -313,7 +313,7 @@ func (s *VectorStoreService) GetAllAnalysisReportHeaders(ctx context.Context) ([
 
 // GetAllAnalysisReports はすべての分析レポートを完全に取得します
 func (s *VectorStoreService) GetAllAnalysisReports(ctx context.Context) ([]models.AnalysisReport, error) {
-	collectionName := "hunt_chat_documents"
+	collectionName := "hunt_documents"
 	points, err := s.ScrollAllPoints(ctx, collectionName, 1000) // 最大1000件まで取得
 	if err != nil {
 		return nil, fmt.Errorf("全レポートの取得に失敗: %w", err)
@@ -383,7 +383,7 @@ func (s *VectorStoreService) GetAllAnomalyResponses(ctx context.Context) ([]mode
 
 // GetAnalysisReportByID はIDで単一の分析レポートを取得します
 func (s *VectorStoreService) GetAnalysisReportByID(ctx context.Context, reportID string) (*models.AnalysisReport, error) {
-	collectionName := "hunt_chat_documents"
+	collectionName := "hunt_documents"
 
 	// IDでフィルタリングしてScrollで取得
 	scrollResult, err := s.qdrantClient.Scroll(ctx, &qdrant.ScrollPoints{
@@ -435,7 +435,7 @@ func (s *VectorStoreService) GetAnalysisReportByID(ctx context.Context, reportID
 
 // DeleteAllAnalysisReports はすべての分析レポートを削除します
 func (s *VectorStoreService) DeleteAllAnalysisReports(ctx context.Context) error {
-	collectionName := "hunt_chat_documents"
+	collectionName := "hunt_documents"
 	points, err := s.ScrollAllPoints(ctx, collectionName, 10000) // Adjust limit as needed
 	if err != nil {
 		return fmt.Errorf("レポートの取得に失敗: %w", err)
@@ -1735,5 +1735,80 @@ func (v *VectorStoreService) DeleteCollection(ctx context.Context, collectionNam
 		return fmt.Errorf("コレクション '%s' の削除に失敗: %w", collectionName, err)
 	}
 
+	return nil
+}
+
+// DeleteDocumentsByType は、指定されたコレクションから特定のタイプのドキュメントをすべて削除します。
+func (s *VectorStoreService) DeleteDocumentsByType(ctx context.Context, collectionName string, docType string) error {
+	// 1. 削除対象のポイントIDを取得
+	var pointIDs []*qdrant.PointId
+	var nextOffset *qdrant.PointId
+
+	for {
+		filter := &qdrant.Filter{
+			Must: []*qdrant.Condition{
+				{
+					ConditionOneOf: &qdrant.Condition_Field{
+						Field: &qdrant.FieldCondition{
+							Key: "type",
+							Match: &qdrant.Match{
+								MatchValue: &qdrant.Match_Keyword{
+									Keyword: docType,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		limit := uint32(100)
+		scrollRequest := &qdrant.ScrollPoints{
+			CollectionName: collectionName,
+			Filter:         filter,
+			Limit:          &limit,
+			WithVectors:    &qdrant.WithVectorsSelector{SelectorOptions: &qdrant.WithVectorsSelector_Enable{Enable: false}},
+			WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: false}},
+			Offset:         nextOffset,
+		}
+
+		res, err := s.qdrantClient.Scroll(ctx, scrollRequest)
+		if err != nil {
+			return fmt.Errorf("削除対象のドキュメント取得に失敗: %w", err)
+		}
+
+		points := res.GetResult()
+		for _, point := range points {
+			pointIDs = append(pointIDs, point.GetId())
+		}
+
+		nextOffset = res.NextPageOffset
+		if nextOffset == nil {
+			break
+		}
+	}
+
+	if len(pointIDs) == 0 {
+		log.Printf("コレクション '%s' にタイプ '%s' のドキュメントは見つかりませんでした。削除は不要です。", collectionName, docType)
+		return nil
+	}
+
+	// 2. ポイントを削除
+	waitDelete := true
+	_, err := s.qdrantClient.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: collectionName,
+		Wait:           &waitDelete,
+		Points: &qdrant.PointsSelector{
+			PointsSelectorOneOf: &qdrant.PointsSelector_Points{
+				Points: &qdrant.PointsIdsList{Ids: pointIDs},
+			},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("タイプ '%s' のドキュメント削除に失敗: %w", docType, err)
+	}
+
+	log.Printf("コレクション '%s' からタイプ '%s' のドキュメントを %d 件削除しました。", collectionName, docType, len(pointIDs))
 	return nil
 }
