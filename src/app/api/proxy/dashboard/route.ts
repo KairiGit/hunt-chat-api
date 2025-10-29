@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
-  return proxyRequest('/monitoring/logs', {
+  return proxyRequest('/api/v1/monitoring/logs', {
     method: 'GET',
     searchParams: searchParams,
   });

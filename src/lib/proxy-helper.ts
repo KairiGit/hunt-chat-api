@@ -113,7 +113,7 @@ export async function proxyRequest(
     console.log('[Proxy] Request options:', {
       method: fetchOptions.method,
       hasBody: !!fetchOptions.body,
-      headers: Object.fromEntries(headers.entries()),
+      // headers: Object.fromEntries(headers.entries()), // APIキー漏洩防止のためコメントアウト
     });
 
     // バックエンドへリクエスト
